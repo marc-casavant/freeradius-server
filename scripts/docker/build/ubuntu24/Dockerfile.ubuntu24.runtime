@@ -1,0 +1,44 @@
+# syntax=docker/dockerfile:1.6
+
+ARG from=ubuntu:24.04
+FROM ${from}
+
+ARG DEBIAN_FRONTEND=noninteractive
+ARG freerad_uid=101
+ARG freerad_gid=101
+
+#
+# Refresh apt metadata so dependencies of the debs can be resolved
+#
+RUN apt-get update
+
+#
+# Bring in ALL harvested debs from the external build context "localrepo"
+# The build command passes:
+#   --build-context localrepo=./fr-harvested-debs
+#
+# Inside that directory we expect a flat set of .deb files (as created by the harvester).
+#
+COPY --from=localrepo / /tmp/debs/
+
+#
+# Create freerad user/group and install the harvested debs
+#
+RUN apt-get update \
+ && groupadd -g ${freerad_gid} -r freerad \
+ && useradd -u ${freerad_uid} -g freerad -r -M -d /etc/freeradius -s /usr/sbin/nologin freerad \
+ && apt-get install -y /tmp/debs/*.deb \
+ && apt-get clean \
+ && rm -rf /var/lib/apt/lists/* /tmp/debs \
+ && ln -s /etc/freeradius /etc/raddb
+
+#
+# Entrypoint and runtime config
+#
+WORKDIR /
+COPY scripts/docker/etc/docker-entrypoint.sh.deb docker-entrypoint.sh
+RUN chmod +x docker-entrypoint.sh
+
+EXPOSE 1812/udp 1813/udp
+ENTRYPOINT ["/docker-entrypoint.sh"]
+CMD ["freeradius"]

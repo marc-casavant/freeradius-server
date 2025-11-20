@@ -1,0 +1,64 @@
+# syntax=docker/dockerfile:1.6
+
+ARG from=ubuntu:24.04
+FROM ${from} AS build
+
+ARG DEBIAN_FRONTEND=noninteractive
+
+#
+#  Install build tools
+#
+RUN apt-get update
+RUN apt-get install -y devscripts equivs git quilt gcc curl
+
+#
+#  Import local arm64 APT repo from an external build context named "localrepo"
+#  The build command will pass: --build-context localrepo=/path/to/arm64-deb-repo
+#
+COPY --from=localrepo / /opt/localrepo/
+
+# Register local repo as APT source
+RUN printf 'deb [trusted=yes] file:/opt/localrepo stable main\n' \
+      > /etc/apt/sources.list.d/localrepo.list \
+ && apt-get update
+
+#
+#  Create build directory
+#
+RUN mkdir -p /usr/local/src/repositories/freeradius-server
+WORKDIR /usr/local/src/repositories/freeradius-server/
+
+#
+#  Copy the FreeRADIUS directory in
+#
+COPY . .
+
+# Register local repo as APT source
+RUN printf 'deb [trusted=yes] file:/opt/localrepo stable main\n' \
+      > /etc/apt/sources.list.d/localrepo.list \
+ && apt-get update
+
+#  Clean up tree - we want to build from the latest commit, not from
+#  any cruft left around on the local system
+#
+RUN git config --global --add safe.directory /usr/local/src/repositories/freeradius-server \
+ && git clean -fdxx \
+ && git reset --hard HEAD
+
+#
+#  Install build dependencies
+#
+RUN if [ -e ./debian/control.in ]; then \
+        debian/rules debian/control; \
+    fi; \
+    echo 'y' | mk-build-deps -irt'apt-get -yV' debian/control
+
+#
+#  Build the server
+#
+RUN make -j$(nproc) deb
+
+# Deb artifacts: /usr/local/src/repositories/*.deb
+# Local repo debs (libkqueue, etc.): /opt/localrepo/pool/...
+#
+# Harvester-only: no entrypoint, no EXPOSE.

@@ -1,0 +1,27 @@
+FROM ubuntu:24.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      build-essential \
+      git \
+      cmake \
+      pkg-config \
+      dpkg-dev \
+      file \
+      ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /work
+COPY patch-libkqueue-soname-0.cmake build_libkqueue_deb.sh /work/
+RUN chmod +x /work/build_libkqueue_deb.sh
+
+ARG LIBKQUEUE_TAG=v2.6.3
+ENV LIBKQUEUE_TAG=${LIBKQUEUE_TAG}
+
+ENV CPACK_NAME=libkqueue0
+
+# OPTIONAL: declare /repo as the volume for clarity (matches harvester)
+VOLUME ["/repo"]
+
+CMD ["/work/build_libkqueue_deb.sh"]

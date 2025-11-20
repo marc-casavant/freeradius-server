@@ -1,29 +1,58 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+
+
 ############################################
-# Usage / argument parsing
+# Usage / argument parsing & auto-detect
 ############################################
 
-if [ "$#" -ne 1 ]; then
-  echo "Usage: $0 /absolute/path/to/fr-extra-packages-repo" >&2
+
+# Always resolve script location for repo detection
+SCRIPT_PATH="${BASH_SOURCE[0]}"
+SCRIPT_DIR="$(cd -- "$(dirname "$SCRIPT_PATH")" >/dev/null 2>&1 && pwd)"
+PACKAGING_REPO="$SCRIPT_DIR/packaging/repo"
+
+# Usage message
+usage() {
+  echo "Usage: $0 [extra-packages-repo] [harvester-image] [runtime-image]" >&2
+  echo "  extra-packages-repo: Absolute path to fr-extra-packages repo (auto-detects if omitted)" >&2
+  echo "  harvester-image:     Optional custom harvester image name" >&2
+  echo "  runtime-image:       Optional custom runtime image name" >&2
   exit 1
-fi
+}
 
-FR_EXTRA_PACKAGES_REPO="$1"
+# Parse arguments
 
-# Require an absolute path (starts with /)
-case "$FR_EXTRA_PACKAGES_REPO" in
-  /*) ;;
-  *)
-    echo "ERROR: FR_EXTRA_PACKAGES_REPO must be an absolute path, got: $FR_EXTRA_PACKAGES_REPO" >&2
+if [ -d "$PACKAGING_REPO" ]; then
+  # Auto-detect packaging repo (no .deb check)
+  FR_EXTRA_PACKAGES_REPO="$(cd "$SCRIPT_DIR/packaging" && pwd)"
+  echo "[INFO] Auto-detected extra-packages repo at: $FR_EXTRA_PACKAGES_REPO"
+
+  # Allow optional harvester/runtime image names
+  HARVESTER_IMAGE="${1:-freeradius-deb-harvester:ubuntu24-arm64}"
+  RUNTIME_IMAGE="${2:-freeradius-server:ubuntu24-arm64}"
+
+else
+  # User override mode
+  if [ "$#" -lt 1 ]; then
+    usage
+  fi
+
+  FR_EXTRA_PACKAGES_REPO="$1"
+
+  case "$FR_EXTRA_PACKAGES_REPO" in
+    /*) ;;  # absolute OK
+    *) echo "ERROR: FR_EXTRA_PACKAGES_REPO must be absolute." >&2; exit 1;;
+  esac
+
+  if [ ! -d "$FR_EXTRA_PACKAGES_REPO" ]; then
+    echo "ERROR: FR_EXTRA_PACKAGES_REPO directory does not exist: $FR_EXTRA_PACKAGES_REPO" >&2
     exit 1
-    ;;
-esac
+  fi
 
-if [ ! -d "$FR_EXTRA_PACKAGES_REPO" ]; then
-  echo "ERROR: FR_EXTRA_PACKAGES_REPO does not exist or is not a directory: $FR_EXTRA_PACKAGES_REPO" >&2
-  exit 1
+  HARVESTER_IMAGE="${2:-freeradius-deb-harvester:ubuntu24-arm64}"
+  RUNTIME_IMAGE="${3:-freeradius-server:ubuntu24-arm64}"
 fi
 
 LOCALREPO="$FR_EXTRA_PACKAGES_REPO/repo"
@@ -37,7 +66,7 @@ fi
 # Locate repo root (freeradius-server)
 ############################################
 
-SCRIPT_DIR="$(cd -- "$(dirname "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"
+
 # scripts/docker → repo root = ../..
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
@@ -55,8 +84,8 @@ cd "$REPO_ROOT"
 HARVESTED_DIR="${HARVESTED_DIR:-fr-harvested-debs}"
 
 PLATFORM="linux/arm64"
-HARVESTER_IMAGE="freeradius-deb-harvester:ubuntu24-arm64"
-RUNTIME_IMAGE="freeradius-server:ubuntu24-arm64"
+
+# ...existing code...
 
 HARVESTER_DOCKERFILE="$REPO_ROOT/scripts/docker/build/ubuntu24/Dockerfile.ubuntu24.harvester"
 RUNTIME_DOCKERFILE="$REPO_ROOT/scripts/docker/build/ubuntu24/Dockerfile.ubuntu24.runtime"

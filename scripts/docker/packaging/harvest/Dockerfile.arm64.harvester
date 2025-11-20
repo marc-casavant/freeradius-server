@@ -1,0 +1,24 @@
+FROM ubuntu:24.04
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Tools:
+# - dpkg-dev provides dpkg-scanpackages
+# - basic build tools included just in case you later expand scripts
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      apt-utils ca-certificates \
+      dpkg-dev \
+      build-essential pkg-config cmake git \
+      curl wget xz-utils \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /work
+COPY packages.txt harvest_downloads.sh make_local_repo.sh /work/
+RUN chmod +x /work/*.sh
+
+# Two mount points:
+# /repo is the *output* repo tree
+# /seed can contain extra .debs to merge (e.g., libkqueue0)
+VOLUME ["/repo", "/seed"]
+
+# Default command: harvest packages, build repo indexes, then print files
+CMD ["/bin/bash", "-lc", "/work/harvest_downloads.sh && /work/make_local_repo.sh && find /repo -maxdepth 3 -type f -print"]

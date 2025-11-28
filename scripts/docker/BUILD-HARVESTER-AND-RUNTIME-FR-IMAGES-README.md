@@ -14,11 +14,12 @@
 
 ### Optional deb harvester and runtime image names:
 
-`<freeradius-server-localrepo-src>/scripts/docker/build-harvester-and-runtime-fr-images.sh [extra-packages-repo] [harvester-image-name] [runtime-image-name]`
+`<freeradius-server-localrepo-src>/scripts/docker/build-harvester-and-runtime-fr-images.sh [--extra-packages-repo <path>] [--harvester-image-name <name>] [--runtime-image-name <name>] [--log <logfile>]`
 
-- extra-packages-repo: Absolute path to fr-extra-packages repo (auto-detects if omitted)
-- harvester-image:     Optional custom harvester image name
-- runtime-image:       Optional custom runtime image name
+- `--extra-packages-repo <path>`: Absolute path to fr-extra-packages repo (auto-detects if omitted)
+- `--harvester-image-name <name>`: Optional custom harvester image name
+- `--runtime-image-name <name>`: Optional custom runtime image name
+- `--log <logfile>`: Optional log file to export build output
 
 Image name examples:
 - freeradius-deb-harvester:ubuntu24-arm64

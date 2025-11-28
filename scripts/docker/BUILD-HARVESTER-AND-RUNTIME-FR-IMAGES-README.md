@@ -8,12 +8,17 @@
 
 ## Automated build
 
-The script now supports passing custom image names as arguments:
+### Using defaults:
 
-`freeradius-server-src>/scripts/docker/build-harvester-and-runtime-fr-images.sh [extra-packages-repo] [harvester-image-name] [runtime-image-name]`
+`<freeradius-server-localrepo-src>/scripts/docker/build-harvester-and-runtime-fr-images.sh`
 
-- If you omit the image names, defaults are used.
-- If you omit the repo path and the script can auto-detect it.
+### Optional deb harvester and runtime image names:
+
+`<freeradius-server-localrepo-src>/scripts/docker/build-harvester-and-runtime-fr-images.sh [extra-packages-repo] [harvester-image-name] [runtime-image-name]`
+
+- extra-packages-repo: Absolute path to fr-extra-packages repo (auto-detects if omitted)
+- harvester-image:     Optional custom harvester image name
+- runtime-image:       Optional custom runtime image name
 
 Image name examples:
 - freeradius-deb-harvester:ubuntu24-arm64

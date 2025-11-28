@@ -85,8 +85,6 @@ HARVESTED_DIR="${HARVESTED_DIR:-fr-harvested-debs}"
 
 PLATFORM="linux/arm64"
 
-# ...existing code...
-
 HARVESTER_DOCKERFILE="$REPO_ROOT/scripts/docker/build/ubuntu24/Dockerfile.ubuntu24.harvester"
 RUNTIME_DOCKERFILE="$REPO_ROOT/scripts/docker/build/ubuntu24/Dockerfile.ubuntu24.runtime"
 
@@ -143,7 +141,6 @@ docker buildx build \
   "$REPO_ROOT"
 
 echo
-echo "✅ Done."
 echo "   Harvester image: ${HARVESTER_IMAGE}"
 echo "   Runtime image:   ${RUNTIME_IMAGE}"
 echo "   Harvested debs:  ${HARVESTED_DIR}/"

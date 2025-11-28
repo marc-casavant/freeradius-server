@@ -167,6 +167,41 @@ bool dict_attr_flags_valid(fr_dict_attr_t *da)
 	}
 
 	/*
+	 *	Sanity check aliases.
+	 */
+	if (flags->is_alias) {
+		fr_dict_attr_ext_ref_t *ext;
+
+		ext = fr_dict_attr_ext(da, FR_DICT_ATTR_EXT_REF);
+		if (!ext) {
+			fr_strerror_const("ALIAS is missing extension");
+			return false;
+		}
+
+		if (!ext->ref) {
+			fr_strerror_const("ALIAS is missing ref");
+			return false;
+		}
+
+		if (da->parent->type == FR_TYPE_STRUCT) {
+			fr_strerror_const("ALIAS cannot be added to a data type 'struct'");
+			return false;
+		}
+
+		fr_assert(!da->flags.is_unknown);
+		fr_assert(!da->flags.is_raw);
+		fr_assert(!da->flags.array);
+		fr_assert(!da->flags.is_known_width);
+		fr_assert(!da->flags.has_value);
+		fr_assert(!da->flags.counter);
+		fr_assert(!da->flags.secret);
+		fr_assert(!da->flags.unsafe);
+		fr_assert(!da->flags.is_ref_target);
+		fr_assert(!da->flags.local);
+		fr_assert(!da->flags.has_fixup);
+	}
+
+	/*
 	 *	The "extra" flag is a grab-bag of stuff, depending on
 	 *	the data type.
 	 */
@@ -474,14 +509,14 @@ bool dict_attr_flags_valid(fr_dict_attr_t *da)
 			 */
 		} else if (!flags->extra) {
 			if ((type != FR_TYPE_TLV) && (type != FR_TYPE_VENDOR)) {
-				fr_strerror_const("The 'format=' flag can only be used with attributes of type 'tlv'");
+				fr_strerror_printf("The 'format=' flag can only be used with attributes of type 'tlv', and not type '%s'", fr_type_to_str(type));
 				return false;
 			}
 
 			if ((flags->type_size != 1) &&
 			    (flags->type_size != 2) &&
 			    (flags->type_size != 4)) {
-				fr_strerror_const("The 'format=' flag can only be used with attributes of type size 1,2 or 4");
+				fr_strerror_printf("The 'format=' flag can only be used with attributes of type size 1,2 or 4, not %i", flags->type_size);
 				return false;
 			}
 		}
@@ -614,19 +649,6 @@ bool dict_attr_flags_valid(fr_dict_attr_t *da)
 			return false;
 		}
 		break;
-
-		/*
-		 *	"key" fields inside of a STRUCT can have
-		 *	children, even if they are integer data type.
-		 */
-	case FR_TYPE_UINT8:
-	case FR_TYPE_UINT16:
-	case FR_TYPE_UINT32:
-		/*
-		 *	@todo - remove after migration_union_key is deleted
-		 */
-		if (fr_dict_attr_is_key_field(parent)) break;
-		FALL_THROUGH;
 
 	default:
 		fr_strerror_printf("Attributes of type '%s' cannot have child attributes",

@@ -98,6 +98,25 @@ ssize_t fr_pair_print_value_quoted(fr_sbuff_t *out, fr_pair_t const *vp, fr_toke
 	FR_SBUFF_SET_RETURN(out, &our_out);
 }
 
+/** Print either a quoted value, an enum, or a normal value.
+ *
+ */
+static ssize_t fr_pair_print_value(fr_sbuff_t *out, fr_pair_t const *vp)
+{
+	fr_sbuff_t		our_out = FR_SBUFF(out);
+	char const		*name;
+
+	if ((name = fr_value_box_enum_name(&vp->data)) != NULL) {
+		FR_SBUFF_IN_CHAR_RETURN(&our_out, ':', ':');
+		FR_SBUFF_IN_STRCPY_RETURN(&our_out, name);
+	} else {
+
+		FR_SBUFF_RETURN(fr_pair_print_value_quoted, &our_out, vp, T_DOUBLE_QUOTED_STRING);
+	}
+
+	FR_SBUFF_SET_RETURN(out, &our_out);
+}
+
 /** Print one attribute and value to a string
  *
  * Print a fr_pair_t in the format:
@@ -144,20 +163,7 @@ ssize_t fr_pair_print(fr_sbuff_t *out, fr_dict_attr_t const *parent, fr_pair_t c
 	FR_SBUFF_IN_STRCPY_RETURN(&our_out, token);
 	FR_SBUFF_IN_CHAR_RETURN(&our_out, ' ');
 
-	if (fr_type_is_leaf(vp->vp_type) && vp->data.enumv && vp->data.enumv->flags.has_value) {
-		char const *name;
-
-		name = fr_dict_enum_name_by_value(vp->data.enumv, &vp->data);
-		if (!name) goto no_enumv;
-
-		FR_SBUFF_IN_CHAR_RETURN(&our_out, ':', ':');
-		FR_SBUFF_IN_STRCPY_RETURN(&our_out, name);
-
-	} else {
-
-	no_enumv:
-		FR_SBUFF_RETURN(fr_pair_print_value_quoted, &our_out, vp, T_DOUBLE_QUOTED_STRING);
-	}
+	FR_SBUFF_RETURN(fr_pair_print_value, &our_out, vp);
 
 	FR_SBUFF_SET_RETURN(out, &our_out);
 }
@@ -207,7 +213,7 @@ ssize_t fr_pair_print_secure(fr_sbuff_t *out, fr_dict_attr_t const *parent, fr_p
 
 	if (fr_type_is_leaf(vp->vp_type)) {
 		if (!vp->data.secret) {
-			FR_SBUFF_RETURN(fr_pair_print_value_quoted, &our_out, vp, T_DOUBLE_QUOTED_STRING);
+			FR_SBUFF_RETURN(fr_pair_print_value, &our_out, vp);
 
 		} else {
 			switch (vp->vp_type) {
@@ -301,7 +307,7 @@ static void fr_pair_list_log_sbuff(fr_log_t const *log, int lvl, fr_pair_t *pare
 
 		default:
 			(void) fr_sbuff_in_strcpy(sbuff, " = ");
-			if (fr_value_box_print_quoted(sbuff, &vp->data, T_DOUBLE_QUOTED_STRING)< 0) break;
+			if (fr_pair_print_value(sbuff, vp) < 0) break;
 
 			fr_log(log, L_DBG, file, line, "%*s%*s", lvl * 2, "",
 			       (int) fr_sbuff_used(sbuff), fr_sbuff_start(sbuff));
@@ -401,4 +407,47 @@ void fr_pair_debug(FILE *fp, fr_pair_t const *pair)
 	(void) fr_pair_print(&sbuff, NULL, pair);
 
 	fprintf(fp, "%pV\n", fr_box_strvalue_len(fr_sbuff_start(&sbuff), fr_sbuff_used(&sbuff)));
+}
+
+static const char spaces[] = "                                                                                                                                ";
+
+static void fprintf_pair_list(FILE *fp, fr_pair_list_t const *list, int depth)
+{
+	fr_pair_list_foreach(list, vp) {
+		fprintf(fp, "%.*s", depth, spaces);
+
+		if (fr_type_is_leaf(vp->vp_type)) {
+			fr_fprintf(fp, "%s %s %pV\n", vp->da->name, fr_tokens[vp->op], &vp->data);
+			continue;
+		}
+
+		fr_assert(fr_type_is_structural(vp->vp_type));
+
+		fprintf(fp, "%s = {\n", vp->da->name);
+		fprintf_pair_list(fp, &vp->vp_group, depth + 1);
+		fprintf(fp, "%.*s}\n", depth, spaces);
+	}
+}
+
+void fr_fprintf_pair_list(FILE *fp, fr_pair_list_t const *list)
+{
+	fprintf_pair_list(fp, list, 0);
+}
+
+/*
+ *	print.c doesn't include pair.h, and doing so causes too many knock-on effects.
+ */
+void fr_fprintf_pair(FILE *fp, char const *msg, fr_pair_t const *vp)
+{
+	if (msg) fputs(msg, fp);
+
+	if (fr_type_is_leaf(vp->vp_type)) {
+		fr_fprintf(fp, "%s %s %pV\n", vp->da->name, fr_tokens[vp->op], &vp->data);
+	} else {
+		fr_assert(fr_type_is_structural(vp->vp_type));
+
+		fprintf(fp, "%s = {\n", vp->da->name);
+		fprintf_pair_list(fp, &vp->vp_group, 1);
+		fprintf(fp, "}\n");
+	}
 }

@@ -433,19 +433,6 @@ fr_pair_t *fr_pair_afrom_da_depth_nested(TALLOC_CTX *ctx, fr_pair_list_t *list, 
 	for (i = start; i <= da->depth; i++) {
 		find = da_stack.da[i];
 
-		/*
-		 *	If we're asked to create a key field, then do it.
-		 *
-		 *	Otherwise if we're creating a child struct (which is magically parented by the key
-		 *	field), then don't bother creating the key field.  It will be automatically filled in
-		 *	by the encoder.
-		 *
-		 *	@todo - remove after migration_union_key is deleted
-		 */
-		if ((find != da) && fr_dict_attr_is_key_field(find)) {
-			continue;
-		}
-
 		vp = fr_pair_find_by_da(cur_list, NULL, find);
 		if (!vp || (vp->da == da)) {
 			if  (fr_pair_append_by_da(cur_ctx, &vp, cur_list, find) < 0) return NULL;
@@ -3435,19 +3422,6 @@ static fr_pair_t *pair_alloc_parent(fr_pair_t *in, fr_pair_t *item, fr_dict_attr
 {
 	fr_pair_t *parent, *vp;
 
-	/*
-	 *	We should never be called with a leaf da.
-	 *
-	 *	If we're asked to create children of a keyed
-	 *	structure, just create the children in the parent.
-	 *
-	 *	@todo - remove after migration_union_key is deleted
-	 */
-	if (!fr_type_is_structural(da->type)) {
-		fr_assert(fr_dict_attr_is_key_field(da));
-		da = da->parent;
-	}
-
 	fr_assert(fr_type_is_structural(da->type));
 
 	/*
@@ -3522,48 +3496,5 @@ void fr_pair_list_afrom_box(TALLOC_CTX *ctx, fr_pair_list_t *out, fr_dict_t cons
 
 	if (fr_pair_list_afrom_substr(&root, &relative, &FR_SBUFF_IN(box->vb_strvalue, box->vb_length)) < 0) {
 		return;
-	}
-}
-
-static const char spaces[] = "                                                                                                                                ";
-
-static void fprintf_pair_list(FILE *fp, fr_pair_list_t const *list, int depth)
-{
-	fr_pair_list_foreach(list, vp) {
-		fprintf(fp, "%.*s", depth, spaces);
-
-		if (fr_type_is_leaf(vp->vp_type)) {
-			fr_fprintf(fp, "%s %s %pV\n", vp->da->name, fr_tokens[vp->op], &vp->data);
-			continue;
-		}
-
-		fr_assert(fr_type_is_structural(vp->vp_type));
-
-		fprintf(fp, "%s = {\n", vp->da->name);
-		fprintf_pair_list(fp, &vp->vp_group, depth + 1);
-		fprintf(fp, "%.*s}\n", depth, spaces);
-	}
-}
-
-void fr_fprintf_pair_list(FILE *fp, fr_pair_list_t const *list)
-{
-	fprintf_pair_list(fp, list, 0);
-}
-
-/*
- *	print.c doesn't include pair.h, and doing so causes too many knock-on effects.
- */
-void fr_fprintf_pair(FILE *fp, char const *msg, fr_pair_t const *vp)
-{
-	if (msg) fputs(msg, fp);
-
-	if (fr_type_is_leaf(vp->vp_type)) {
-		fr_fprintf(fp, "%s %s %pV\n", vp->da->name, fr_tokens[vp->op], &vp->data);
-	} else {
-		fr_assert(fr_type_is_structural(vp->vp_type));
-
-		fprintf(fp, "%s = {\n", vp->da->name);
-		fprintf_pair_list(fp, &vp->vp_group, 1);
-		fprintf(fp, "}\n");
 	}
 }

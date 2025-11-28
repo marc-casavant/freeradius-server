@@ -86,6 +86,7 @@ typedef struct {
 								///< ephemeral.
 	unsigned int		is_alias : 1;			//!< This isn't a real attribute, it's a reference to
 								///< to one.
+	unsigned int		has_alias : 1;			//!< this attribute has an alias.
 	unsigned int		internal : 1;			//!< Internal attribute, should not be received
 								///< in protocol packets, should not be encoded.
 	unsigned int		array : 1; 			//!< Pack multiples into 1 attr.
@@ -107,6 +108,8 @@ typedef struct {
 
 	unsigned int		unsafe : 1;	       		//!< e.g. Cleartext-Password
 
+	unsigned int		is_ref_target : 1;		//!< is the target of a ref, and cannot be moved.
+
 	/*
 	 *	@todo - if we want to clean these fields up, make
 	 *	"subtype" and "type_size" both 4-bit bitfields.  That
@@ -119,8 +122,6 @@ typedef struct {
 	unsigned int		local : 1;       		//!< is a local variable
 
 	unsigned int		has_fixup : 1;			//! needs a fixup during dictionary parsing
-
-	unsigned int		migration_union_key : 1;       	//!< for migrating key fields
 
 	/*
 	 *	main: extra is set, then this field is is key, bit, or a uint16 length field.
@@ -235,9 +236,16 @@ struct dict_attr_s {
  * @note New extension structures should also be added to the appropriate table in dict_ext.c
  */
 typedef enum {
-	FR_DICT_ENUM_EXT_KEY_CHILD_REF = 0,			//!< Reference to a child associated with this key
+	FR_DICT_ENUM_EXT_ATTR_REF = 0,				//!< Reference to a child attribute associated with this key value
 	FR_DICT_ENUM_EXT_MAX
 } fr_dict_enum_ext_t;
+
+/** Enum extension - Sub-struct or union pointer
+ *
+ */
+typedef struct {
+	fr_dict_attr_t const	*da;				//!< the child structure referenced by this value of key
+} fr_dict_enum_ext_attr_ref_t;
 
 /** Value of an enumerated attribute
  *
@@ -250,8 +258,6 @@ typedef struct {
 	fr_value_box_t const	*value;				//!< Enum value (what name maps to).
 
 	uint8_t			ext[FR_DICT_ENUM_EXT_MAX];	//!< Extensions to the dictionary attribute.
-
-	fr_dict_attr_t const	*key_child_ref[];		//!< for key fields
 } fr_dict_enum_value_t CC_HINT(aligned(FR_EXT_ALIGNMENT));
 
 /** Private enterprise

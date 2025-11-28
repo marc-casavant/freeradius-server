@@ -42,9 +42,34 @@ RCSID("$Id$")
 #define XDEBUG DEBUG2
 #endif
 
-#define RDEBUG_ASSIGN(_name, _op, _box) do { \
-	RDEBUG2(((_box)->type == FR_TYPE_STRING) ? "%s %s \"%pV\"" : "%s %s %pV", _name, fr_tokens[_op], _box); \
-} while (0)
+#define RDEBUG_ASSIGN(_name, _op, _box) rdebug_assign(request, _name, _op, _box)
+
+static void rdebug_assign(request_t *request, char const *attr, fr_token_t op, fr_value_box_t const *box)
+{
+	char const *name;
+
+	switch (box->type) {
+	case FR_TYPE_QUOTED:
+		RDEBUG2("%s %s \"%pV\"", attr, fr_tokens[op], box);
+		break;
+
+	case FR_TYPE_INTERNAL:
+	case FR_TYPE_STRUCTURAL:
+		fr_assert(0);
+		break;
+
+	default:
+		fr_assert(fr_type_is_leaf(box->type));
+
+		if ((name = fr_value_box_enum_name(box)) != NULL) {
+			RDEBUG2("%s %s ::%s", attr, fr_tokens[op], name);
+			break;
+		}
+
+		RDEBUG2("%s %s %pV", attr, fr_tokens[op], box);
+		break;
+	}
+}
 
 typedef struct {
 	fr_value_box_list_t	list;			//!< output data
@@ -66,6 +91,7 @@ typedef int (*unlang_edit_expand_t)(request_t *request, unlang_frame_state_edit_
 struct edit_map_s {
 	fr_edit_list_t		*el;			//!< edit list
 
+	request_t		*request;
 	TALLOC_CTX		*ctx;
 	edit_map_t		*parent;
 	edit_map_t		*child;
@@ -131,6 +157,7 @@ static int tmpl_attr_from_result(TALLOC_CTX *ctx, map_t const *map, edit_result_
 				   	.attr = {
 						.dict_def = request->local_dict,
 						.list_def = request_attr_request,
+						.ci = map->ci,
 					}
 				   });
 	if (slen <= 0) {
@@ -906,6 +933,13 @@ static fr_pair_t *edit_list_pair_build(fr_pair_t *parent, fr_dcursor_t *cursor, 
 	fr_pair_t *vp;
 	edit_map_t *current = uctx;
 
+	if (!fr_type_is_structural(parent->da->type)) {
+		request_t *request = current->request;
+
+		REDEBUG("Cannot create child of leaf data type");
+		return NULL;
+	}
+
 	vp = fr_pair_afrom_da(parent, da);
 	if (!vp) return NULL;
 
@@ -1654,6 +1688,7 @@ static void edit_state_init_internal(request_t *request, unlang_frame_state_edit
 		state->ours = false;
 	}
 
+	current->request = request;
 	current->ctx = state;
 	current->el = state->el;
 	current->map_list = map_list;

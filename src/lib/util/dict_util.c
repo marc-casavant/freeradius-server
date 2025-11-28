@@ -1076,17 +1076,18 @@ fr_dict_attr_t *_dict_attr_alloc(char const *filename, int line,
 	return n;
 }
 
-/** Copy a an existing attribute
+/** Copy a an existing attribute, possibly to a new location
  *
  * @param[in] ctx		to allocate new attribute in.
+ * @param[in] parent		where to parent the copy from. If NULL, in->parent is used.
  * @param[in] in		attribute to copy.
- * @param[in] new_name		to assign to the attribute.
- *				If NULL the existing name will be used.
+ * @param[in] name		to assign to the attribute. If NULL, in->name is used.
  * @return
  *	- A copy of the input fr_dict_attr_t on success.
  *	- NULL on failure.
  */
-fr_dict_attr_t *dict_attr_acopy(TALLOC_CTX *ctx, fr_dict_attr_t const *in, char const *new_name)
+fr_dict_attr_t *dict_attr_acopy(TALLOC_CTX *ctx, fr_dict_attr_t const *parent, fr_dict_attr_t const *in,
+				char const *name)
 {
 	fr_dict_attr_t		*n;
 
@@ -1096,47 +1097,27 @@ fr_dict_attr_t *dict_attr_acopy(TALLOC_CTX *ctx, fr_dict_attr_t const *in, char 
 		return NULL;
 	}
 
-	n = dict_attr_alloc(ctx, in->parent, new_name ? new_name : in->name,
+	fr_assert(parent || name);
+
+	n = dict_attr_alloc(ctx, parent ? parent : in->parent, name ? name : in->name,
 			    in->attr, in->type, &(dict_attr_args_t){ .flags = &in->flags });
 	if (unlikely(!n)) return NULL;
 
+	/*
+	 *	This newly allocated attribute is not the target of a ref.
+	 */
+	n->flags.is_ref_target = false;
+
 	if (dict_attr_ext_copy_all(&n, in) < 0) {
+	error:
 		talloc_free(n);
 		return NULL;
 	}
 	DA_VERIFY(n);
 
-	return n;
-}
-
-/** Copy an existing attribute to a different dictionary
- *
- * @param[in] ctx		to allocate new attribute in.
- * @param[in] parent		new parent to copy into
- * @param[in] in		attribute to copy.
- * @return
- *	- A copy of the input fr_dict_attr_t on success.
- *	- NULL on failure.
- */
-static fr_dict_attr_t *dict_attr_acopy_dict(TALLOC_CTX *ctx, fr_dict_attr_t *parent, fr_dict_attr_t const *in)
-{
-	fr_dict_attr_t		*n;
-
-	if (in->flags.has_fixup) {
-		fr_strerror_printf("Cannot copy from %s - source attribute is waiting for additional definitions",
-				   in->name);
-		return NULL;
+	if (fr_type_is_structural(in->type) && in->flags.has_alias) {
+		if (dict_attr_acopy_aliases(n, in) < 0) goto error;
 	}
-
-	n = dict_attr_alloc(ctx, parent, in->name,
-			    in->attr, in->type, &(dict_attr_args_t){ .flags = &in->flags });
-	if (unlikely(!n)) return NULL;
-
-	if (dict_attr_ext_copy_all(&n, in) < 0) {
-		talloc_free(n);
-		return NULL;
-	}
-	DA_VERIFY(n);
 
 	return n;
 }
@@ -1165,6 +1146,35 @@ int fr_dict_attr_acopy_local(fr_dict_attr_t const *dst, fr_dict_attr_t const *sr
 	return dict_attr_acopy_children(dst->dict, UNCONST(fr_dict_attr_t *, dst), src);
 }
 
+static int dict_attr_acopy_child(fr_dict_t *dict, fr_dict_attr_t *dst, fr_dict_attr_t const *src,
+				 fr_dict_attr_t const *child)
+{
+	fr_dict_attr_t			*copy;
+
+	copy = dict_attr_acopy(dict->pool, dst, child, child->name);
+	if (!copy) return -1;
+
+	fr_assert(copy->parent == dst);
+	copy->depth = copy->parent->depth + 1;
+
+	if (dict_attr_child_add(dst, copy) < 0) return -1;
+
+	if (dict_attr_add_to_namespace(dst, copy) < 0) return -1;
+
+	if (!dict_attr_children(child)) return 0;
+
+	if (dict_attr_acopy_children(dict, copy, child) < 0) return -1;
+
+	/*
+	 *	Children of a UNION get an ALIAS added to the parent of the UNION.  This allows the UNION
+	 *	attribute to be omitted from parsing and printing.
+	 */
+	if (src->type != FR_TYPE_UNION) return 0;
+
+	return dict_attr_alias_add(dst->parent, copy->name, copy);
+}
+
+
 /** Copy the children of an existing attribute
  *
  * @param[in] dict		to allocate the children in
@@ -1176,35 +1186,89 @@ int fr_dict_attr_acopy_local(fr_dict_attr_t const *dst, fr_dict_attr_t const *sr
  */
 int dict_attr_acopy_children(fr_dict_t *dict, fr_dict_attr_t *dst, fr_dict_attr_t const *src)
 {
-	fr_dict_attr_t const		*child = NULL;
-	fr_dict_attr_t			*copy;
-	uint				depth_diff = dst->depth - src->depth;
+	uint				child_num;
+	fr_dict_attr_t const		*child = NULL, *src_key = NULL;
+	fr_dict_attr_t			*dst_key;
 
 	fr_assert(fr_dict_attr_has_ext(dst, FR_DICT_ATTR_EXT_CHILDREN));
 	fr_assert(dst->type == src->type);
 	fr_assert(fr_dict_attr_is_key_field(src) == fr_dict_attr_is_key_field(dst));
 
-	for (child = fr_dict_attr_iterate_children(src, &child);
-	     child != NULL;
-	     child = fr_dict_attr_iterate_children(src, &child)) {
-		if (child->dict == dict) {
-			copy = dict_attr_acopy(dict->pool, child, NULL);
-		} else {
-			copy = dict_attr_acopy_dict(dict->pool, dst, child);
+	/*
+	 *	For non-struct parents, we can copy their children in any order.
+	 */
+	if (likely(src->type != FR_TYPE_STRUCT)) {
+		for (child = fr_dict_attr_iterate_children(src, &child);
+		     child != NULL;
+		     child = fr_dict_attr_iterate_children(src, &child)) {
+			if (dict_attr_acopy_child(dict, dst, src, child) < 0) return -1;
 		}
-		if (!copy) return -1;
 
-		copy->parent = dst;
-		copy->depth += depth_diff;
-
-		if (dict_attr_child_add(dst, copy) < 0) return -1;
-
-		if (dict_attr_add_to_namespace(dst, copy) < 0) return -1;
-
-		if (!dict_attr_children(child)) continue;
-
-		if (dict_attr_acopy_children(dict, copy, child) < 0) return -1;
+		return 0;
 	}
+
+	/*
+	 *	For structs, we copy the children in order.  This allows "key" fields to be copied before
+	 *	fields which depend on them.
+	 *
+	 *	Note that due to the checks in the DEFINE and ATTRIBUTE parsers (but not the validate
+	 *	routines), STRUCTs can only have children which are MEMBERs.  And MEMBERs are allocated in
+	 *	order.
+	 */
+	for (child_num = 1, child = fr_dict_attr_child_by_num(src, child_num);
+	     child != NULL;
+	     child_num++, child = fr_dict_attr_child_by_num(src, child_num)) {
+		/*
+		 *	If the key field has enums, then delay copying the enums until after we've copied all
+		 *	of the other children.
+		 *
+		 *	For a UNION which is inside of a STRUCT, the UNION has a reference to the key field.
+		 *	So the key field needs to be defined before we create the UNION.
+		 *
+		 *	But the key field also has a set of ENUMs, each of which has a key ref to the UNION
+		 *	member which is associated with that key value.  This means that we have circular
+		 *	dependencies.
+		 *
+		 *	The loop is resolved by creating the key first, and allocating room for an ENUM
+		 *	extension.  This allows the UNION to reference the key.  Once the UNION is created, we
+		 *	go back and copy all of the ENUMs over.  The ENUM copy routine will take care of
+		 *	fixing up the refs.
+		 */
+		if (unlikely(fr_dict_attr_is_key_field(child) && child->flags.has_value)) {
+			src_key = child;
+
+			if (src_key->flags.has_fixup) {
+				fr_strerror_printf("Cannot copy from %s - source attribute is waiting for additional definitions",
+						   src_key->name);
+				return -1;
+			}
+
+			dst_key = dict_attr_alloc(dict, dst, src_key->name,
+						  src_key->attr, src_key->type, &(dict_attr_args_t){ .flags = &src_key->flags });
+			if (unlikely(!dst_key)) return -1;
+
+			if (!dict_attr_ext_alloc(&dst_key, FR_DICT_ATTR_EXT_ENUMV)) return -1;
+
+			fr_assert(dst_key->parent == dst);
+			dst_key->depth = dst->depth + 1;
+
+			if (dict_attr_child_add(dst, dst_key) < 0) return -1;
+
+			if (dict_attr_add_to_namespace(dst, dst_key) < 0) return -1;
+
+			continue;
+		}
+
+		if (dict_attr_acopy_child(dict, dst, src, child) < 0) return -1;
+
+		DA_VERIFY(child);
+	}
+
+	DA_VERIFY(dst);
+
+	if (!src_key) return 0;
+
+	if (!dict_attr_ext_copy(&dst_key, src_key, FR_DICT_ATTR_EXT_ENUMV)) return -1;
 
 	return 0;
 }
@@ -1243,6 +1307,93 @@ int dict_attr_acopy_enumv(fr_dict_attr_t *dst, fr_dict_attr_t const *src)
 	return -1;
 }
 
+
+/** Copy aliases of an existing attribute to a new one.
+ *
+ * @param[in] dst		where to copy the children to
+ * @param[in] src		where to copy the children from
+ * @return
+ *	- 0 on success
+ *	- <0 on error
+ */
+int dict_attr_acopy_aliases(UNUSED fr_dict_attr_t *dst, fr_dict_attr_t const *src)
+{
+	fr_hash_table_t *namespace;
+	fr_hash_iter_t	iter;
+	fr_dict_attr_t const *da;
+
+	if (!src->flags.has_alias) return 0;
+
+	switch (src->type) {
+	case FR_TYPE_TLV:
+	case FR_TYPE_VENDOR:
+	case FR_TYPE_VSA:
+		break;
+
+		/*
+		 *	Automatically added aliases are copied in dict_attr_acopy_child().
+		 */
+	case FR_TYPE_STRUCT:
+		return 0;
+
+	default:
+		fr_strerror_printf("Cannot add ALIAS to parent attribute %s of data type '%s'", src->name, fr_type_to_str(src->type));
+		return -1;
+
+	}
+
+	namespace = dict_attr_namespace(src);
+	fr_assert(namespace != NULL);
+
+	for (da = fr_hash_table_iter_init(namespace, &iter);
+	     da != NULL;
+	     da = fr_hash_table_iter_next(namespace, &iter)) {
+		if (!da->flags.is_alias) continue;
+
+#if 1
+		fr_strerror_printf("Cannot clone ALIAS %s.%s to %s.%s", src->name, da->name, dst->name, da->name);
+		return -1;
+		
+#else
+		fr_dict_attr_t const *parent, *ref;
+		fr_dict_attr_t const *new_ref;
+
+		ref = fr_dict_attr_ref(da);
+		fr_assert(ref != NULL);
+
+		/*
+		 *	ALIASes are normally down the tree, to shorten sibling relationships.
+		 *	e.g. Cisco-AVPAir -> Vendor-Specific.Cisco.AV-Pair.
+		 *
+		 *	The question is to we want to allow aliases to create cross-tree links?  I suspect
+		 *	not.
+		 */
+		parent = fr_dict_attr_common_parent(src, ref, true);
+		if (!parent) {
+			fr_strerror_printf("Cannot clone ALIAS %s.%s to %s.%s, the alias reference %s is outside of the shared tree",
+					   src->name, da->name, dst->name, da->name, ref->name);
+			return -1;
+		}
+
+		fr_assert(parent == src);
+
+		new_ref = fr_dict_attr_by_name(NULL, dst, da->name);
+		fr_assert(new_ref == NULL);
+
+		/*
+		 *	This function needs to walk back up from "ref" to "src", finding the intermediate DAs.
+		 *	Once that's done, it needs to walk down from "dst" to create a new "ref".
+		 */
+		new_ref = dict_alias_reref(dst, src, ref);
+		fr_assert(new_ref != NULL);
+
+		if (dict_attr_alias_add(dst, da->name, new_ref) < 0) return -1;
+#endif
+	}
+
+	return 0;
+}
+
 /** Add an alias to an existing attribute
  *
  */
@@ -1251,6 +1402,36 @@ int dict_attr_alias_add(fr_dict_attr_t const *parent, char const *alias, fr_dict
 	fr_dict_attr_t const *da;
 	fr_dict_attr_t *self;
 	fr_hash_table_t *namespace;
+
+	switch (parent->type) {
+	case FR_TYPE_STRUCT:
+		/*
+		 *	If we are a STRUCT, the reference an only be to children of a UNION.
+		 */
+		fr_assert(ref->parent->type == FR_TYPE_UNION);
+
+		/*
+		 *	And the UNION must be a MEMBER of the STRUCT.
+		 */
+		fr_assert(ref->parent->parent == parent);
+		break;
+
+	case FR_TYPE_TLV:
+	case FR_TYPE_VENDOR:
+	case FR_TYPE_VSA:
+		break;
+
+	default:
+		fr_strerror_printf("Cannot add ALIAS to parent attribute %s of data type '%s'",
+				   parent->name, fr_type_to_str(parent->type));
+		return -1;
+	}
+
+	if ((ref->type == FR_TYPE_UNION) || fr_dict_attr_is_key_field(ref)) {
+		fr_strerror_printf("Cannot add ALIAS to target attribute %s of data type '%s'",
+				   ref->name, fr_type_to_str(ref->type));
+		return -1;
+	}
 
 	da = dict_attr_by_name(NULL, parent, alias);
 	if (da) {
@@ -1274,11 +1455,12 @@ int dict_attr_alias_add(fr_dict_attr_t const *parent, char const *alias, fr_dict
 
 		flags.is_alias = 1;	/* These get followed automatically by public functions */
 
-		self = dict_attr_alloc(parent->dict->pool, parent, alias, ref->attr, ref->type, (&(dict_attr_args_t){ .flags = &flags, .ref = ref }));
+		self = dict_attr_alloc(parent->dict->pool, parent, alias, ref->attr, FR_TYPE_VOID, (&(dict_attr_args_t){ .flags = &flags, .ref = ref }));
 		if (unlikely(!self)) return -1;
 	}
 
 	self->dict = parent->dict;
+	UNCONST(fr_dict_attr_t *, parent)->flags.has_alias = true;
 
 	fr_assert(fr_dict_attr_ref(self) == ref);
 
@@ -1472,18 +1654,6 @@ bool dict_attr_can_have_children(fr_dict_attr_t const *da)
 	case FR_TYPE_STRUCT:
 	case FR_TYPE_UNION:
 		return true;
-
-	case FR_TYPE_UINT8:
-	case FR_TYPE_UINT16:
-	case FR_TYPE_UINT32:
-		/*
-		 *	Children are allowed here, but ONLY if this
-		 *	attribute is a key field.
-		 *
-		 *	@todo - remove after migration_union_key is deleted
-		 */
-		if (da->parent && (da->parent->type == FR_TYPE_STRUCT) && fr_dict_attr_is_key_field(da)) return true;
-		break;
 
 	default:
 		break;
@@ -1792,6 +1962,19 @@ int fr_dict_attr_add(fr_dict_t *dict, fr_dict_attr_t const *parent,
 {
 	fr_dict_attr_t *da;
 
+	if (fr_dict_attr_ref(parent)) {
+		fr_strerror_printf("Cannot add children to attribute '%s' which has 'ref=%s'",
+				   parent->name, fr_dict_attr_ref(parent)->name);
+		return -1;
+	}
+
+	if (!dict_attr_can_have_children(parent)) {
+		fr_strerror_printf("Cannot add children to attribute '%s' of type %s",
+				   parent->name,
+				   fr_type_to_str(parent->type));
+		return -1;
+	}
+
 	da = dict_attr_alloc_null(dict->pool, dict->proto);
 	if (unlikely(!da)) return -1;
 
@@ -1861,24 +2044,6 @@ int dict_attr_enum_add_name(fr_dict_attr_t *da, char const *name,
 		return -1;
 	}
 
-#if 0
-	/*
-	 *	Commented out becuase of share/dictionary/dhcpv6/dictionary.rfc6607.
-	 *
-	 *	That dictionary defines a value which is associated with a zero-sized child.
-	 *	In order to enforce this check, we need to support zero-sized structures.
-	 *
-	 *	Perhaps this can be done as a special case after we convert to UNIONs?  Because then
-	 *	we can allow ATTRIBUTE Global-VPN 255 struct[0].
-	 *
-	 *	@todo - remove after migration_union_key is deleted
-	 */
-	if (fr_dict_attr_is_key_field(da) && !key_child_ref) {
-		fr_strerror_const("Child attribute must be defined for VALUEs associated with a 'key' attribute");
-		return -1;
-	}
-#endif
-
 	if (fr_type_is_structural(da->type) || (da->type == FR_TYPE_STRING)) {
 		fr_strerror_printf("Enumeration names cannot be added for data type '%s'", fr_type_to_str(da->type));
 		return -1;
@@ -1918,7 +2083,7 @@ int dict_attr_enum_add_name(fr_dict_attr_t *da, char const *name,
 	 *	Allocate a structure to map between
 	 *	the name and value.
 	 */
-	enumv = talloc_zero_size(da, sizeof(fr_dict_enum_value_t) + sizeof(enumv->key_child_ref[0]) * fr_dict_attr_is_key_field(da));
+	enumv = talloc_zero_size(da, sizeof(fr_dict_enum_value_t));
 	if (!enumv) {
 	oom:
 		fr_strerror_printf("%s: Out of memory", __FUNCTION__);
@@ -1929,7 +2094,15 @@ int dict_attr_enum_add_name(fr_dict_attr_t *da, char const *name,
 	enumv->name = talloc_typed_strdup(enumv, name);
 	enumv->name_len = len;
 
-	if (key_child_ref) enumv->key_child_ref[0] = key_child_ref;
+	if (key_child_ref) {
+		fr_dict_enum_ext_attr_ref_t *ref;
+
+		ref = dict_enum_ext_alloc(&enumv, FR_DICT_ENUM_EXT_ATTR_REF);
+		if (!ref) goto oom;
+
+		ref->da = key_child_ref;
+	}
+
 	enum_value = fr_value_box_alloc(enumv, da->type, NULL);
 	if (!enum_value) goto oom;
 
@@ -2244,25 +2417,23 @@ ssize_t fr_dict_attr_by_oid_legacy(fr_dict_t const *dict, fr_dict_attr_t const *
 	 */
 	*attr = num;
 
-	switch ((*parent)->type) {
-	case FR_TYPE_STRUCTURAL:
-		break;
-
-	default:
-		if (dict_attr_can_have_children(*parent)) break;
-		fr_strerror_printf("Attribute %s (%u) is not a TLV, so cannot contain a child attribute.  "
+	/*
+	 *	Only a limited number of structural types can have children.  Specifically, groups cannot.
+	 */
+	if (!dict_attr_can_have_children(*parent)) {
+		fr_strerror_printf("Attribute %s (%u) cannot contain a child attribute.  "
 				   "Error at sub OID \"%s\"", (*parent)->name, (*parent)->attr, oid);
 		return 0;	/* We parsed nothing */
 	}
 
 	/*
-	 *	If it's not a vendor type, it must be between 0..8*type_size
-	 *
-	 *	@fixme: find the TLV parent, and check it's size
+	 *	TLVs must have a defined size.
 	 */
-	if (((*parent)->type != FR_TYPE_VENDOR) && ((*parent)->type != FR_TYPE_VSA) && !(*parent)->flags.is_root &&
-	    (num > ((uint64_t) 1 << (8 * (*parent)->flags.type_size)))) {
-		fr_strerror_printf("TLV attributes must be %" PRIu64 " bits or less", ((uint64_t)1 << (8 * (*parent)->flags.type_size)));
+	if (((*parent)->type == FR_TYPE_TLV) &&
+	    (!(*parent)->flags.internal && !(*parent)->flags.name_only && !(*parent)->flags.is_root &&
+	     (num > ((uint64_t) 1 << (8 * (*parent)->flags.type_size))))) {
+		fr_strerror_printf("TLV attributes of parent %s must be %" PRIu64 " bits or less",
+				   (*parent)->name, ((uint64_t)1 << (8 * (*parent)->flags.type_size)));
 		return 0;
 	}
 
@@ -2335,12 +2506,7 @@ fr_slen_t fr_dict_oid_component(fr_dict_attr_err_t *err,
 
 	*out = NULL;
 
-	switch (parent->type) {
-	case FR_TYPE_STRUCTURAL:
-		break;
-
-	default:
-		if (dict_attr_can_have_children(parent)) break;
+	if (!dict_attr_can_have_children(parent)) {
 		fr_strerror_printf("Attribute '%s' is type %s and cannot contain child attributes.  "
 				   "Error at OID \"%.*s\"",
 				   parent->name,
@@ -5021,19 +5187,7 @@ bool fr_dict_attr_can_contain(fr_dict_attr_t const *parent, fr_dict_attr_t const
 	if (child->flags.is_raw) return true; /* let people do stupid things */
 
 	/*
-	 *	Child is a STRUCT which has a parent key field.  The
-	 *	child pair nesting, though, is in the grandparent.
-	 *
-	 *	@todo - remove after migration_union_key is deleted
-	 */
-	if (fr_dict_attr_is_key_field(child->parent)) {
-		fr_assert(child->parent->parent == parent);
-
-		return (child->parent->parent == parent);
-	}
-
-	/*
-	 *	Only structural types or key fields can have children.
+	 *	Only structural types can have children.
 	 */
 	if (!fr_type_structural[parent->type]) return false;
 

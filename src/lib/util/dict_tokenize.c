@@ -492,8 +492,17 @@ FLAG_FUNC(array)
 
 static int dict_flag_clone(fr_dict_attr_t **da_p, char const *value, UNUSED fr_dict_flag_parser_rule_t const *rules)
 {
-	if (((*da_p)->type != FR_TYPE_TLV) && ((*da_p)->type != FR_TYPE_STRUCT)) {
-		fr_strerror_const("'clone=...' references can only be used for 'tlv' and 'struct' types");
+	/*
+	 *	Clone has a limited scope.
+	 */
+	switch ((*da_p)->type) {
+	case FR_TYPE_LEAF:
+	case FR_TYPE_STRUCT:
+	case FR_TYPE_TLV:
+		break;
+
+	default:
+		fr_strerror_printf("Attributes of data type '%s' cannot use 'clone=...'", fr_type_to_str((*da_p)->type));
 		return -1;
 	}
 
@@ -516,17 +525,18 @@ FLAG_FUNC(counter)
 static int dict_flag_enum(fr_dict_attr_t **da_p, char const *value, UNUSED fr_dict_flag_parser_rule_t const *rule)
 {
 	/*
-	 *	Allow enum=... as a synonym for
-	 *	"clone".  We check the sources and not
-	 *	the targets, because that's easier.
-	 *
-	 *	Plus, ENUMs are really just normal attributes
-	 *	in disguise.
+	 *	Allow enum=... as an almost synonym for "clone", where we copy only the VALUEs, and not any
+	 *	children.
 	 */
 	if (!fr_type_is_leaf((*da_p)->type)) {
 		fr_strerror_const("'enum=...' references cannot be used for structural types");
 		return -1;
 	}
+
+	/*
+	 *	Ensure that this attribute has room for enums.
+	 */
+	if (!dict_attr_ext_alloc(da_p, FR_DICT_ATTR_EXT_ENUMV)) return -1;
 
 	if (unlikely(dict_attr_ref_aunresolved(da_p, value, FR_DICT_ATTR_REF_ENUM) < 0)) return -1;
 
@@ -597,7 +607,7 @@ static int dict_flag_key(fr_dict_attr_t **da_p, char const *value, UNUSED fr_dic
 	/*
 	 *	Allocate the ref and save the value.
 	 */
-	ext = fr_dict_attr_ext(da, FR_DICT_ATTR_EXT_REF);
+	ext = fr_dict_attr_ext(da, FR_DICT_ATTR_EXT_KEY);
 	if (ext) {
 		fr_strerror_printf("Attribute already has a 'key=...' defined");
 		return -1;
@@ -1140,13 +1150,41 @@ static int dict_read_process_common(dict_tokenize_ctx_t *dctx, fr_dict_attr_t **
 	 */
 	memcpy(&da->flags, base_flags, sizeof(da->flags));
 
-	/*
-	 *	Set the base type of the attribute.
-	 */
-	if (dict_process_type_field(dctx, type_name, &da) < 0) {
-	error:
-		if (da == to_free) talloc_free(to_free);
-		return -1;
+	if (unlikely(strcmp(type_name, "auto") == 0)) {
+		fr_dict_attr_t const *src;
+		char const *p, *end;
+
+		if (!flag_name || !(p = strstr(flag_name, "clone="))) {
+			fr_strerror_const("Data type of 'auto' is missing the required flag 'clone=...'");
+			goto error;
+		}
+
+		p += 6;
+		for (end = p; *end != '\0'; end++) {
+			if (*end == ',') break;
+		}
+
+		if (fr_dict_protocol_reference(&src, parent, &FR_SBUFF_IN(p, end)) < 0) goto error;
+		if (!src) {
+			fr_strerror_const("Data type 'auto' requires that the 'clone=...' reference points to an attribute which already exists");
+			goto error;
+		}
+
+		/*
+		 *	Don't copy the source yet, as later things may add enums, children, etc. to the source
+		 *	attribute.  Instead, we just copy the data type.
+		 */
+		if (dict_attr_type_init(&da, src->type) < 0) goto error;
+
+	} else {
+		/*
+		 *	Set the base type of the attribute.
+		 */
+		if (dict_process_type_field(dctx, type_name, &da) < 0) {
+		error:
+			if (da == to_free) talloc_free(to_free);
+			return -1;
+		}
 	}
 
 	/*
@@ -1352,15 +1390,39 @@ static int dict_read_process_alias(dict_tokenize_ctx_t *dctx, char **argv, int a
 		return -1;
 	}
 
+	if (strchr(argv[0], '.') != NULL) {
+		fr_strerror_const("ALIAS names must be in the local context, and cannot contain '.'");
+		return -1;
+	}
+
+	/*
+	 *	Internally we can add aliases to STRUCTs.  But the poor user can't.
+	 *
+	 *	This limitation is mainly so that we can differentiate automatically added aliases (which
+	 *	point to unions), from ones added by users.  If we make dict_attr_acopy_aliases() a little
+	 *	smarter, then we can relax those checks.
+	 */
+	switch (parent->type) {
+	case FR_TYPE_TLV:
+	case FR_TYPE_VSA:
+	case FR_TYPE_VENDOR:
+		break;
+
+	default:
+		fr_strerror_printf("ALIAS cannot be added to data type '%s'", fr_type_to_str(parent->type));
+		return -1;
+	}
+
 	/*
 	 *	Relative refs get resolved from the current namespace.
 	 */
 	if (argv[1][0] == '.') {
 		ref_namespace = parent;
-	/*
-	 *	No dot, so we're looking in the root namespace.
-	 */
+
 	} else {
+		/*
+		 *	No dot, so we're looking in the root namespace.
+		 */
 		ref_namespace = dctx->dict->root;
 	}
 
@@ -1486,7 +1548,6 @@ static int dict_read_process_attribute(dict_tokenize_ctx_t *dctx, char **argv, i
 		fr_assert(key);
 		fr_assert(fr_dict_attr_is_key_field(key));
 		da = UNCONST(fr_dict_attr_t *, key);
-		da->flags.migration_union_key = true;
 	}
 
 	da = dict_attr_alloc_null(dctx->dict->pool, dctx->dict->proto);
@@ -1689,7 +1750,12 @@ static int dict_read_process_begin(dict_tokenize_ctx_t *dctx, char **argv, int a
 		return -1;
 	}
 
-	if (!fr_type_is_tlv(da->type) && !fr_type_is_struct(da->type) && (da->type != FR_TYPE_UNION)) {
+	/*
+	 *	We cannot use BEGIN/END on structs.  Once they're defined, they can't be modified.
+	 *
+	 *	This restriction can be lifted once we don't auto-push on FR_TYPE_STRUCT.
+	 */
+	if (!fr_type_is_tlv(da->type) && (da->type != FR_TYPE_UNION)) {
 		fr_strerror_printf("BEGIN %s cannot be used with data type '%s'",
 				   argv[0],
 				   fr_type_to_str(da->type));
@@ -2551,219 +2617,6 @@ static int dict_read_process_member(dict_tokenize_ctx_t *dctx, char **argv, int 
 	return dict_set_value_attr(dctx, da);
 }
 
-/** Process a STRUCT name attr value
- *
- * Define struct 'name' when key 'attr' has 'value'.
- *
- *  Which MUST be a sub-structure of another struct
- */
-static int dict_read_process_struct(dict_tokenize_ctx_t *dctx, char **argv, int argc,
-				    UNUSED fr_dict_attr_flags_t *base_flags)
-{
-	fr_value_box_t			box = FR_VALUE_BOX_INITIALISER_NULL(box);
-	int				i;
-	fr_dict_attr_t const	       	*parent = NULL;
-	fr_dict_attr_t const		*key = NULL;
-	unsigned int			attr;
-	char const     		        *name = argv[0];
-	char const			*value;
-	char				*flags = NULL;
-	fr_dict_attr_t			*da;
-
-	fr_assert(dctx->stack_depth > 0);
-
-	/*
-	 *	Old-stle: unwind the stack until we find a parent which has a child named for key_attr.
-	 */
-	parent = CURRENT_FRAME(dctx)->da;
-	if (parent->type != FR_TYPE_UNION) {
-		char const *key_attr;
-
-		if ((argc < 3) || (argc > 4)) {
-			fr_strerror_const("Invalid STRUCT syntax");
-			return -1;
-		}
-
-		key_attr = argv[1];
-		value = argv[2];
-		if (argc == 4) flags = argv[3];
-
-		parent = NULL;
-		for (i = dctx->stack_depth; i > 0; i--) {
-			key = dict_attr_by_name(NULL, dctx->stack[i].da, key_attr);
-			if (key) {
-				parent = key;
-				dctx->stack_depth = i;
-				break;
-			}
-		}
-
-		/*
-		 *	No parent was found, maybe the reference is a fully qualified name from the root.
-		 */
-		if (!parent) {
-			parent = fr_dict_attr_by_oid(NULL, CURRENT_FRAME(dctx)->da->dict->root, key_attr);
-
-			if (!parent) {
-				fr_strerror_printf("Invalid STRUCT definition, unknown key attribute %s",
-						   key_attr);
-				return -1;
-			}
-
-			/*
-			 *	@todo - remove after migration_union_key is deleted
-			 */
-			if (!fr_dict_attr_is_key_field(parent)) {
-				fr_strerror_printf("Attribute '%s' is not a 'key' attribute", key_attr);
-				return -1;
-			}
-
-			key = parent;
-		}
-
-	} else {
-		fr_dict_attr_ext_ref_t *ext;
-
-		/*
-		 *	STRUCT inside of a UNION doesn't need to specify the name of the key.
-		 *
-		 *	STRUCT name value [flags]
-		 */
-		if ((argc < 2) || (argc > 3)) {
-			fr_strerror_const("Invalid STRUCT syntax");
-			return -1;
-		}
-
-		value = argv[1];
-		if (argc == 3) flags = argv[2];
-
-		/*
-		 *	The parent is a union.  Get and verify the key ref.
-		 */
-		ext = fr_dict_attr_ext(parent, FR_DICT_ATTR_EXT_KEY);
-		fr_assert(ext != NULL);
-
-		/*
-		 *	Double-check names against the reference.
-		 */
-		key = ext->ref;
-		fr_assert(key);
-		fr_assert(fr_dict_attr_is_key_field(key));
-	}
-
-	/*
-	 *	Rely on dict_attr_flags_valid() to ensure that
-	 *	da->type is an unsigned integer, AND that da->parent->type == struct
-	 */
-	if (!fr_cond_assert(parent->parent->type == FR_TYPE_STRUCT)) return -1;
-
-	/*
-	 *	Parse the value, which should be a small integer.
-	 */
-	if (fr_value_box_from_str(NULL, &box, key->type, NULL, value, strlen(value), NULL) < 0) {
-		fr_strerror_printf_push("Invalid value for STRUCT \"%s\"", value);
-		return -1;
-	}
-
-	/*
-	 *	Allocate the attribute here, and then fill in the fields
-	 *	as we start parsing the various elements of the definition.
-	 */
-	da = dict_attr_alloc_null(dctx->dict->pool, dctx->dict->proto);
-	if (unlikely(da == NULL)) return -1;
-	dict_attr_location_set(dctx, da);
-	da->dict = dctx->dict;
-
-	if (unlikely(dict_attr_type_init(&da, FR_TYPE_STRUCT) < 0)) {
-	error:
-		talloc_free(da);
-		return -1;
-	}
-
-	/*
-	 *	Structs can be prefixed with 16-bit lengths, but not
-	 *	with any other type of length.
-	 */
-	if (flags) {
-		if (dict_process_flag_field(dctx, flags, &da) < 0) goto error;
-	}
-
-	/*
-	 *	Create a unique number for the child attribute, based on the value of the key.
-	 */
-	switch (key->type) {
-	case FR_TYPE_UINT8:
-		attr = box.vb_uint8;
-		break;
-
-	case FR_TYPE_UINT16:
-		attr = box.vb_uint16;
-		break;
-
-	case FR_TYPE_UINT32:
-		attr = box.vb_uint32;
-		break;
-
-	default:
-		fr_assert(0);	/* should have been checked earlier when the key attribute was defined */
-		return -1;
-	}
-
-	if (unlikely(dict_attr_num_init(da, attr) < 0)) goto error;
-	if (unlikely(dict_attr_parent_init(&da, parent) < 0)) goto error;
-	if (unlikely(dict_attr_finalise(&da, name) < 0)) goto error;
-
-	/*
-	 *	Check to see if this is a duplicate attribute
-	 *	and whether we should ignore it or error out...
-	 */
-	switch (dict_attr_allow_dup(da)) {
-	case 1:
-		break;
-
-	case 0:
-		talloc_free(da);
-		return 0;
-
-	default:
-		goto error;
-	}
-
-	/*
-	 *	Add the STRUCT to the global namespace, and as a child of "parent".
-	 */
-	switch (dict_attr_add_or_fixup(&dctx->fixup, &da)) {
-	default:
-		goto error;
-
-	/* FIXME: Should dict_attr_enum_add_name also be called in the fixup code? */
-	case 0:
-		da = dict_attr_by_name(NULL, parent, name);
-		if (!da) return -1;
-
-		/*
-		 *	A STRUCT definition is an implicit BEGIN-STRUCT.
-		 */
-		dctx->relative_attr = NULL;
-		if (dict_dctx_push(dctx, da, NEST_NONE) < 0) return -1;
-
-		/*
-		 *	Add the VALUE to the key attribute, and ensure that
-		 *	the VALUE also contains a pointer to the child struct.
-		 */
-		if (dict_attr_enum_add_name(fr_dict_attr_unconst(key), name, &box, false, true, da) < 0) {
-			fr_value_box_clear(&box);
-			return -1;
-		}
-		fr_value_box_clear(&box);
-		break;
-
-	case 1:
-		break;
-	}
-
-	return 0;
-}
 
 /** Process a value alias
  *
@@ -2872,9 +2725,9 @@ static int dict_read_process_value(dict_tokenize_ctx_t *dctx, char **argv, int a
 	}
 
 	/*
-	 *	Pass in the root for type attr, so that we can find the reference.
+	 *	Pass in the DA.  The value-box parsing functions will figure out where the enums are found.
 	 */
-	if (da->type == FR_TYPE_ATTR) enumv = fr_dict_root(da->dict);
+	if (da->type == FR_TYPE_ATTR) enumv = da;
 
 	if (fr_value_box_from_str(NULL, &value, da->type, enumv,
 				  argv[2], strlen(argv[2]),
@@ -3266,7 +3119,6 @@ static int _dict_from_file(dict_tokenize_ctx_t *dctx,
 		{ L("FLAGS"),			{ .parse = dict_read_process_flags } },
 		{ L("MEMBER"),			{ .parse = dict_read_process_member } },
 		{ L("PROTOCOL"),		{ .parse = dict_read_process_protocol, .begin = dict_begin_protocol }},
-		{ L("STRUCT"),			{ .parse = dict_read_process_struct } },
 		{ L("VALUE"),			{ .parse = dict_read_process_value } },
 		{ L("VENDOR"),			{ .parse = dict_read_process_vendor } },
 	};

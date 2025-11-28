@@ -4018,6 +4018,32 @@ int fr_value_box_cast_in_place(TALLOC_CTX *ctx, fr_value_box_t *vb,
 	return 0;
 }
 
+/** Return a uint64_t from a #fr_value_box_t
+ *
+ * @param[in] vb	the value-box.  Must be an unsigned integer data type.
+ * @return		the value as uint64_t.
+ */
+uint64_t fr_value_box_as_uint64(fr_value_box_t const *vb)
+{
+#undef O
+#define O(_x, _y) case FR_TYPE_##_x: return vb->vb_##_y
+
+
+	switch (vb->type) {
+		O(BOOL, bool);
+		O(UINT8, uint8);
+		O(UINT16, uint16);
+		O(UINT32, uint32);
+		O(UINT64, uint64);
+		O(SIZE, size);
+
+	default:
+		fr_assert(0);
+		return 0;
+	}
+}
+
+
 /** Assign a #fr_value_box_t value from an #fr_ipaddr_t
  *
  * Automatically determines the type of the value box from the ipaddr address family
@@ -5609,10 +5635,10 @@ parse:
 		 *	carry a ref to where their values are taken from.
 		 */
 		if (dst_enumv->type == FR_TYPE_ATTR) {
-			dst_enumv = fr_dict_root(dst_enumv->dict);
+			if (!dst_enumv->flags.has_value) dst_enumv = fr_dict_root(dst_enumv->dict);
 
 		} else if (!dst_enumv->flags.is_root) {
-			fr_strerror_printf("Can only start from dictionary root for data type 'attr', and not from %s", dst_enumv->name);
+			fr_strerror_printf("Can only start from dictionary root for data type 'attribute', and not from %s", dst_enumv->name);
 			return -1;
 		}
 

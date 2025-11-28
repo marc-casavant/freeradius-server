@@ -361,20 +361,28 @@ ssize_t fr_struct_from_network(TALLOC_CTX *ctx, fr_pair_list_t *out,
 		}
 
 		enumv = fr_dict_enum_by_value(key_vp->da, &key_vp->data);
-		if (enumv) child = enumv->key_child_ref[0];
+		if (enumv) child = fr_dict_enum_attr_ref(enumv);
 
 		if (!child) {
+			/*
+			 *	Always encode the unknown child as attribute number 0.  Since the unknown
+			 *	children have no "real" number, and are all unique da's, they are
+			 *	incomparable.  And thus can all be given the same number.
+			 */
+			uint64_t attr = 0;
+
 			FR_PROTO_TRACE("No matching child structure found");
 		unknown_child:
+
 			/*
-			 *	Always encode the unknown child as
-			 *	attribute number 0.  Since the unknown
-			 *	children have no "real" number, and
-			 *	are all unique da's, they are
-			 *	incomparable.  And thus can all be
-			 *	given the same number.
+			 *	But if we have a key field, the unknown attribute number is taken from the
+			 *	from the key field.
 			 */
-			child = fr_dict_attr_unknown_raw_afrom_num(child_ctx, substruct_da, 0);
+			if (fr_type_is_integer(key_vp->vp_type)) {
+				attr = fr_value_box_as_uint64(&key_vp->data);
+			}
+
+			child = fr_dict_attr_unknown_raw_afrom_num(child_ctx, substruct_da, attr);
 			if (!child) {
 				FR_PROTO_TRACE("failed allocating unknown child for key VP %s - %s",
 					       key_vp->da->name, fr_strerror());
@@ -580,14 +588,9 @@ static ssize_t encode_union(fr_dbuff_t *dbuff, fr_dict_attr_t const *wrapper,
 {
 	ssize_t		slen;
 	fr_pair_t	*parent, *child, *found = NULL;
+	fr_dict_attr_t const *child_ref;
 	fr_dcursor_t	child_cursor;
 	fr_dbuff_t	work_dbuff = FR_DBUFF(dbuff);
-
-	if (!encode_pair) {
-		fr_strerror_printf("Asked to encode child attribute %s, but we were not passed an encoding function",
-				   wrapper->name);
-		return PAIR_ENCODE_FATAL_ERROR;
-	}
 
 	parent = fr_dcursor_current(cursor);
 	if (!parent || (parent->da != wrapper)) return 0;
@@ -611,8 +614,8 @@ static ssize_t encode_union(fr_dbuff_t *dbuff, fr_dict_attr_t const *wrapper,
 		fr_dict_enum_value_t const *enumv;
 
 		enumv = fr_dict_enum_by_value(key_da, &key_vp->data);
-		if (enumv) {
-			found = fr_pair_find_by_da(&parent->vp_group, NULL, enumv->key_child_ref[0]);
+		if (enumv && ((child_ref = fr_dict_enum_attr_ref(enumv)) != NULL)) {
+			found = fr_pair_find_by_da(&parent->vp_group, NULL, child_ref);
 			if (found) {
 				(void) fr_dcursor_set_current(&child_cursor, found);
 			}
@@ -637,7 +640,10 @@ static ssize_t encode_union(fr_dbuff_t *dbuff, fr_dict_attr_t const *wrapper,
 		for (enumv = fr_dict_enum_iter_init(key_da, &iter);
 		     enumv != NULL;
 		     enumv = fr_dict_enum_iter_next(key_da, &iter)) {
-			if (enumv->key_child_ref[0] == child->da) break;
+			child_ref = fr_dict_enum_attr_ref(enumv);
+			if (!child_ref) continue;
+
+			if (child_ref == child->da) break;
 		}
 
 		/*
@@ -1015,10 +1021,7 @@ ssize_t fr_struct_to_network(fr_dbuff_t *dbuff,
 	 *	Check for keyed data to encode.
 	 */
 	if (vp && key_da) {
-		/*
-		 *	We have no more "flat" VPs.
-		 */
-		fr_assert(vp->da->parent == key_da);
+		fr_assert((vp->da->parent->type == FR_TYPE_UNION) || (vp->da->parent == key_da) || vp->da->flags.is_unknown || vp->da->flags.is_raw);
 
 		slen = encode_keyed_struct(&work_dbuff, vp, da_stack, depth,
 					   cursor, encode_ctx, encode_value, encode_pair);

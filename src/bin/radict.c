@@ -45,6 +45,7 @@ typedef enum {
 static fr_dict_t *dicts[255];
 static bool print_values = false;
 static bool print_headers = false;
+static bool print_recursive = false;
 static radict_out_t output_format = RADICT_OUT_FANCY;
 static fr_dict_t **dict_end = dicts;
 
@@ -65,6 +66,7 @@ static void usage(void)
 	fprintf(stderr, "  -h               Print help text.\n");
 	fprintf(stderr, "  -H               Show the headers of each field.\n");
 	fprintf(stderr, "  -p <protocol>    Set protocol by name\n");
+	fprintf(stderr, "  -r               Write out attributes recursively.\n");
 	fprintf(stderr, "  -V               Write out all attribute values.\n");
 	fprintf(stderr, "  -x               Debugging mode.\n");
 	fprintf(stderr, "\n");
@@ -73,6 +75,7 @@ static void usage(void)
 
 static int load_dicts(char const *dict_dir, char const *protocol)
 {
+	int		loaded = 0;
 	DIR		*dir;
 	struct dirent	*dp;
 
@@ -137,6 +140,7 @@ static int load_dicts(char const *dict_dir, char const *protocol)
 					goto error;
 				}
 				dict_end++;
+				loaded++;
 			}
 
 			/*
@@ -147,17 +151,33 @@ static int load_dicts(char const *dict_dir, char const *protocol)
 	}
 	closedir(dir);
 
+	if (!loaded) {
+		if (!protocol) {
+			fr_strerror_printf("Failed to load any dictionaries");
+		} else {
+			fr_strerror_printf("Failed to load dictionary for protocol %s", protocol);
+		}
+
+		return -1;
+	}
+
 	return 0;
 }
 
-static void da_print_info_td(fr_dict_t const *dict, fr_dict_attr_t const *da)
+static const char *spaces = "                                                                                ";
+
+static void da_print_info_td(fr_dict_t const *dict, fr_dict_attr_t const *da, int depth)
 {
 	char 			oid_str[512];
 	char			flags[256];
 	fr_hash_iter_t		iter;
-	fr_dict_enum_value_t		*enumv;
+	fr_dict_enum_value_t	*enumv;
 	fr_sbuff_t		old_str_sbuff = FR_SBUFF_OUT(oid_str, sizeof(oid_str));
 	fr_sbuff_t		flags_sbuff = FR_SBUFF_OUT(flags, sizeof(flags));
+
+	char const		*type;
+	fr_dict_attr_t const	*child;
+	fr_hash_table_t		*namespace;
 
 	if (fr_dict_attr_oid_print(&old_str_sbuff, NULL, da, false) <= 0) {
 		fr_strerror_printf("OID string too long");
@@ -166,27 +186,36 @@ static void da_print_info_td(fr_dict_t const *dict, fr_dict_attr_t const *da)
 
 	fr_dict_attr_flags_print(&flags_sbuff, dict, da->type, &da->flags);
 
+	if (!da->flags.is_alias) {
+		type = fr_type_to_str(da->type);
+	} else {
+		fr_assert(da->type == FR_TYPE_VOID);
+		type = "ALIAS";
+	}
+
+	printf("%.*s", depth, spaces);
+
 	/* Protocol Name Type */
 
 	switch(output_format) {
 		case RADICT_OUT_CSV:
 			printf("%s,%s,%s,%d,%s,%s\n",
-			       fr_dict_root(dict)->name,
+			       depth == 0 ? fr_dict_root(dict)->name : "",
 			       fr_sbuff_start(&old_str_sbuff),
 			       da->name,
 			       da->attr,
-			       fr_type_to_str(da->type),
+			       type,
 			       fr_sbuff_start(&flags_sbuff));
 			break;
 
 		case RADICT_OUT_FANCY:
 		default:
 			printf("%s\t%s\t%s\t%d\t%s\t%s\n",
-			       fr_dict_root(dict)->name,
+			       depth == 0 ? fr_dict_root(dict)->name : "",
 			       fr_sbuff_start(&old_str_sbuff),
 			       da->name,
 			       da->attr,
-			       fr_type_to_str(da->type),
+			       type,
 			       fr_sbuff_start(&flags_sbuff));
 	}
 
@@ -201,15 +230,14 @@ static void da_print_info_td(fr_dict_t const *dict, fr_dict_attr_t const *da)
 		     enumv = fr_hash_table_iter_next(ext->value_by_name, &iter)) {
 		     	char *str;
 
-
 			switch(output_format) {
 				case RADICT_OUT_CSV:
 					str = fr_asprintf(NULL, "%s,%s,%s,%d,%s,%s,%s,%pV",
-								fr_dict_root(dict)->name,
+								depth == 0 ? fr_dict_root(dict)->name : "",
 								fr_sbuff_start(&old_str_sbuff),
 								da->name,
 								da->attr,
-								fr_type_to_str(da->type),
+								type,
 								fr_sbuff_start(&flags_sbuff),
 								enumv->name,
 								enumv->value);
@@ -218,19 +246,33 @@ static void da_print_info_td(fr_dict_t const *dict, fr_dict_attr_t const *da)
 				case RADICT_OUT_FANCY:
 				default:
 					str = fr_asprintf(NULL, "%s\t%s\t%s\t%d\t%s\t%s\t%s\t%pV",
-								fr_dict_root(dict)->name,
+								depth == 0 ? fr_dict_root(dict)->name : "",
 								fr_sbuff_start(&old_str_sbuff),
 								da->name,
 								da->attr,
-								fr_type_to_str(da->type),
+								type,
 								fr_sbuff_start(&flags_sbuff),
 								enumv->name,
 								enumv->value);
 			}
 
-			printf("%s\n", str);
+			printf("%.*s%s\n", depth, spaces, str);
 			talloc_free(str);
 		}
+	}
+
+	/*
+	 *	Print definitions recursively.
+	 */
+	if (!print_recursive || !fr_type_is_structural(da->type)) return;
+
+	namespace = dict_attr_namespace(da);
+	fr_assert(namespace != NULL);
+
+	for (child = fr_hash_table_iter_init(namespace, &iter);
+	     child != NULL;
+	     child = fr_hash_table_iter_next(namespace, &iter)) {
+		da_print_info_td(dict, child, depth + 1);
 	}
 }
 
@@ -256,7 +298,7 @@ static void _raddict_export(fr_dict_t const *dict, uint64_t *count, uintptr_t *l
 			*high = (uintptr_t)da;
 		}
 
-		da_print_info_td(fr_dict_by_da(da), da);
+		da_print_info_td(fr_dict_by_da(da), da, 0);
 	}
 
 	if (count) (*count)++;
@@ -320,7 +362,7 @@ int main(int argc, char *argv[])
 	fr_debug_lvl = 1;
 	fr_log_fp = stdout;
 
-	while ((c = getopt(argc, argv, "AcfED:p:VxhH")) != -1) switch (c) {
+	while ((c = getopt(argc, argv, "AcfED:p:rVxhH")) != -1) switch (c) {
 		case 'A':
 			alias = true;
 			break;
@@ -349,6 +391,10 @@ int main(int argc, char *argv[])
 			protocol = optarg;
 			break;
 
+		case 'r':
+			print_recursive = true;
+			break;
+
 		case 'V':
 			print_values = true;
 			break;
@@ -360,7 +406,6 @@ int main(int argc, char *argv[])
 		case 'h':
 		default:
 			usage();
-			found = true;
 			goto finish;
 	}
 	argc -= optind;
@@ -388,6 +433,7 @@ int main(int argc, char *argv[])
 		ret = 1;
 		goto finish;
 	}
+
 	/*
 	 *	Don't emit spurious errors...
 	 */
@@ -401,7 +447,7 @@ int main(int argc, char *argv[])
 	if (dict_end == dicts) {
 		fr_perror("radict - No dictionaries loaded");
 		ret = 1;
-		goto finish;
+
 	}
 
 	if (print_headers) switch(output_format) {
@@ -437,6 +483,8 @@ int main(int argc, char *argv[])
 			DEBUG2("Memory allocd %zu (bytes)", talloc_total_size(*dict_p));
 			DEBUG2("Memory spread %zu (bytes)", (size_t) (high - low));
 		} while (++dict_p < dict_end);
+
+		goto finish;
 	}
 
 	if (alias) {
@@ -447,6 +495,13 @@ int main(int argc, char *argv[])
 				fr_dict_alias_export(fr_log_fp, fr_dict_root(*dict_p));
 			}
 		} while (++dict_p < dict_end);
+
+		goto finish;
+	}
+
+	if (argc == 0) {
+		fprintf(stderr, "Missing attribute argument\n");
+		fr_exit(EXIT_FAILURE);
 	}
 
 	while (argc-- > 0) {
@@ -455,7 +510,6 @@ int main(int argc, char *argv[])
 		fr_dict_t		**dict_p = dicts;
 
 		attr = *argv++;
-
 
 		/*
 		 *	Loop through all the dicts.  An attribute may
@@ -466,11 +520,16 @@ int main(int argc, char *argv[])
 
 			da = fr_dict_attr_by_oid(NULL, fr_dict_root(*dict_p), attr);
 			if (da) {
-				da_print_info_td(*dict_p, da);
+				da_print_info_td(*dict_p, da, 0);
 				found = true;
+			} else {
+				fprintf(stderr, "Dictionary %s does not contain attribute %s\n",
+					fr_dict_root(*dict_p)->name, attr);
 			}
 		} while (++dict_p < dict_end);
 	}
+
+	if (!found) ret = 64;
 
 finish:
 	/*
@@ -492,5 +551,5 @@ finish:
 	 */
 	fr_atexit_global_trigger_all();
 
-	return found ? ret : 64;
+	return ret;
 }

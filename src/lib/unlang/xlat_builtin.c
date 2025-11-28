@@ -56,7 +56,7 @@ static TALLOC_CTX *xlat_ctx;
 typedef struct {
 	fr_test_point_pair_decode_t	*tp_decode;
 	fr_dict_t const			*dict;		//!< Restrict xlat to this namespace
-} protocol_decode_xlat_uctx_t;
+} xlat_pair_decode_uctx_t;
 
 /*
  *	Regular xlat functions
@@ -1297,7 +1297,7 @@ static xlat_action_t xlat_func_log_dst(UNUSED TALLOC_CTX *ctx, UNUSED fr_dcursor
 
 
 static xlat_arg_parser_t const xlat_func_map_arg[] = {
-	{ .required = true, .concat = true, .type = FR_TYPE_STRING },
+	{ .required = true, .type = FR_TYPE_STRING },
 	XLAT_ARG_PARSER_TERMINATOR
 };
 
@@ -1334,46 +1334,48 @@ static xlat_action_t xlat_func_map(TALLOC_CTX *ctx, fr_dcursor_t *out,
 
 	XLAT_ARGS(args, &fmt_vb);
 
-	if (map_afrom_attr_str(request, &map, fmt_vb->vb_strvalue, &attr_rules, &attr_rules) < 0) {
-		RPEDEBUG("Failed parsing \"%s\" as map", fmt_vb->vb_strvalue);
-		return XLAT_ACTION_FAIL;
-	}
-
 	MEM(vb = fr_value_box_alloc(ctx, FR_TYPE_BOOL, NULL));
 	vb->vb_bool = false;	/* Default fail value - changed to true on success */
 	fr_dcursor_append(out, vb);
 
-	switch (map->lhs->type) {
-	case TMPL_TYPE_ATTR:
-	case TMPL_TYPE_XLAT:
-		break;
+	fr_value_box_list_foreach_safe(&fmt_vb->vb_group, fmt) {
+		if (map_afrom_attr_str(request, &map, fmt->vb_strvalue, &attr_rules, &attr_rules) < 0) {
+			RPEDEBUG("Failed parsing \"%s\" as map", fmt_vb->vb_strvalue);
+			return XLAT_ACTION_FAIL;
+		}
 
-	default:
-		REDEBUG("Unexpected type %s in left hand side of expression",
-			tmpl_type_to_str(map->lhs->type));
-		return XLAT_ACTION_FAIL;
-	}
+		switch (map->lhs->type) {
+		case TMPL_TYPE_ATTR:
+		case TMPL_TYPE_XLAT:
+			break;
 
-	switch (map->rhs->type) {
-	case TMPL_TYPE_ATTR:
-	case TMPL_TYPE_EXEC:
-	case TMPL_TYPE_DATA:
-	case TMPL_TYPE_REGEX_XLAT_UNRESOLVED:
-	case TMPL_TYPE_DATA_UNRESOLVED:
-	case TMPL_TYPE_XLAT:
-		break;
+		default:
+			REDEBUG("Unexpected type %s in left hand side of expression",
+				tmpl_type_to_str(map->lhs->type));
+			return XLAT_ACTION_FAIL;
+		}
 
-	default:
-		REDEBUG("Unexpected type %s in right hand side of expression",
-			tmpl_type_to_str(map->rhs->type));
-		return XLAT_ACTION_FAIL;
-	}
+		switch (map->rhs->type) {
+		case TMPL_TYPE_ATTR:
+		case TMPL_TYPE_EXEC:
+		case TMPL_TYPE_DATA:
+		case TMPL_TYPE_REGEX_XLAT_UNRESOLVED:
+		case TMPL_TYPE_DATA_UNRESOLVED:
+		case TMPL_TYPE_XLAT:
+			break;
 
-	RINDENT();
-	ret = map_to_request(request, map, map_to_vp, NULL);
-	REXDENT();
-	talloc_free(map);
-	if (ret < 0) return XLAT_ACTION_FAIL;
+		default:
+			REDEBUG("Unexpected type %s in right hand side of expression",
+				tmpl_type_to_str(map->rhs->type));
+			return XLAT_ACTION_FAIL;
+		}
+
+		RINDENT();
+		ret = map_to_request(request, map, map_to_vp, NULL);
+		REXDENT();
+		talloc_free(map);
+		if (ret < 0) return XLAT_ACTION_FAIL;
+	}}
 
 	vb->vb_bool = true;
 	return XLAT_ACTION_DONE;
@@ -2709,6 +2711,147 @@ static xlat_action_t xlat_func_randstr(TALLOC_CTX *ctx, fr_dcursor_t *out,
 	return XLAT_ACTION_DONE;
 }
 
+/** Convert a UUID in an array of uint32_t to the conventional string representation.
+ */
+static int uuid_print_vb(fr_value_box_t *vb, uint32_t vals[4])
+{
+	char	buffer[36];
+	int	i, j = 0;
+
+#define UUID_CHARS(_v, _num)	for (i = 0; i < _num; i++) { \
+		buffer[j++] = fr_base16_alphabet_encode_lc[(uint8_t)((vals[_v] & 0xf0000000) >> 28)]; \
+		vals[_v] = vals[_v] << 4; \
+	}
+
+	UUID_CHARS(0, 8)
+	buffer[j++] = '-';
+	UUID_CHARS(1, 4)
+	buffer[j++] = '-';
+	UUID_CHARS(1, 4);
+	buffer[j++] = '-';
+	UUID_CHARS(2, 4);
+	buffer[j++] = '-';
+	UUID_CHARS(2, 4);
+	UUID_CHARS(3, 8);
+
+	return fr_value_box_bstrndup(vb, vb, NULL, buffer, sizeof(buffer), false);
+}
+
+static inline void uuid_set_version(uint32_t vals[4], uint8_t version)
+{
+	/*
+	 *	The version is indicated by the upper 4 bits of byte 7 - the 3rd byte of vals[1]
+	 */
+	vals[1] = (vals[1] & 0xffff0fff) | (((uint32_t)version & 0x0f) << 12);
+}
+
+static inline void uuid_set_variant(uint32_t vals[4], uint8_t variant)
+{
+	/*
+	 *	The variant is indicated by the first 1, 2 or 3 bits of byte 9
+	 *	The number of bits is determined by the variant.
+	 */
+	switch (variant) {
+	case 0:
+		vals[2] = vals[2] & 0x7fffffff;
+		break;
+
+	case 1:
+		vals[2] = (vals[2] & 0x3fffffff) | 0x80000000;
+		break;
+
+	case 2:
+		vals[2] = (vals[2] & 0x3fffffff) | 0xc0000000;
+		break;
+
+	case 3:
+		vals[2] = vals[2] | 0xe0000000;
+		break;
+	}
+}
+
+/** Generate a version 4 UUID
+ *
+ * Version 4 UUIDs are all random except the version and variant fields
+ *
+ * Example:
+@verbatim
+%uuid.v4 == "cba48bda-641c-42ae-8173-d97aa04f888a"
+@endverbatim
+ * @ingroup xlat_functions
+ */
+static xlat_action_t xlat_func_uuid_v4(TALLOC_CTX *ctx, fr_dcursor_t *out, UNUSED xlat_ctx_t const *xctx,
+				       UNUSED request_t *request, UNUSED fr_value_box_list_t *args)
+{
+	fr_value_box_t	*vb;
+	uint32_t	vals[4];
+	int		i;
+
+	MEM(vb = fr_value_box_alloc(ctx, FR_TYPE_STRING, NULL));
+
+	/*
+	 *	A type 4 UUID is all random except a few bits.
+	 *	Start with 128 bits of random.
+	 */
+	for (i = 0; i < 4; i++) vals[i] = fr_rand();
+
+	/*
+	 *	Set the version and variant fields
+	 */
+	uuid_set_version(vals, 4);
+	uuid_set_variant(vals, 1);
+
+	if (uuid_print_vb(vb, vals) < 0) return XLAT_ACTION_FAIL;
+
+	fr_dcursor_append(out, vb);
+	return XLAT_ACTION_DONE;
+}
+
+/** Generate a version 7 UUID
+ *
+ * Version 7 UUIDs use 48 bits of unix millisecond epoch and 74 bits of random
+ *
+ * Example:
+@verbatim
+%uuid.v7 == "019a58d8-8524-7342-aa07-c0fa2bba6a4e"
+@endverbatim
+ * @ingroup xlat_functions
+ */
+static xlat_action_t xlat_func_uuid_v7(TALLOC_CTX *ctx, fr_dcursor_t *out, UNUSED xlat_ctx_t const *xctx,
+				       UNUSED request_t *request, UNUSED fr_value_box_list_t *args)
+{
+	fr_value_box_t	*vb;
+	uint32_t	vals[4];
+	int		i;
+	uint64_t	now;
+
+	MEM(vb = fr_value_box_alloc(ctx, FR_TYPE_STRING, NULL));
+
+	/*
+	 *	A type 7 UUID has random data from bit 48
+	 *	Start with random from bit 32 - since fr_rand is uint32
+	 */
+	for (i = 1; i < 4; i++) vals[i] = fr_rand();
+
+	/*
+	 *	The millisecond epoch fills the first 48 bits
+	 */
+	now = fr_time_to_msec(fr_time());
+	now = now << 16;
+	vals[0] = now >> 32;
+	vals[1] = (vals[1] & 0x0000ffff) | (now & 0xffff0000);
+
+	/*
+	 *	Set the version and variant fields
+	 */
+	uuid_set_version(vals, 7);
+	uuid_set_variant(vals, 1);
+
+	if (uuid_print_vb(vb, vals) < 0) return XLAT_ACTION_FAIL;
+
+	fr_dcursor_append(out, vb);
+	return XLAT_ACTION_DONE;
+}
 
 static xlat_arg_parser_t const xlat_func_range_arg[] = {
 	{ .required = true, .type = FR_TYPE_UINT64 },
@@ -4034,7 +4177,7 @@ static xlat_action_t xlat_func_urlunquote(TALLOC_CTX *ctx, fr_dcursor_t *out,
 	return XLAT_ACTION_DONE;
 }
 
-static xlat_arg_parser_t const protocol_decode_xlat_args[] = {
+static xlat_arg_parser_t const xlat_pair_decode_args[] = {
 	{ .required = true, .type = FR_TYPE_VOID },
 	{ .single = true, .type = FR_TYPE_ATTR },
 	XLAT_ARG_PARSER_TERMINATOR
@@ -4051,14 +4194,14 @@ static xlat_arg_parser_t const protocol_decode_xlat_args[] = {
  *
  * @ingroup xlat_functions
  */
-static xlat_action_t protocol_decode_xlat(TALLOC_CTX *ctx, fr_dcursor_t *out,
-					  xlat_ctx_t const *xctx,
-					  request_t *request, fr_value_box_list_t *in)
+static xlat_action_t xlat_pair_decode(TALLOC_CTX *ctx, fr_dcursor_t *out,
+				      xlat_ctx_t const *xctx,
+				      request_t *request, fr_value_box_list_t *in)
 {
 	int					decoded;
 	fr_value_box_t				*vb, *in_head, *root_da;
 	void					*decode_ctx = NULL;
-	protocol_decode_xlat_uctx_t const	*decode_uctx = talloc_get_type_abort(*(void * const *)xctx->inst, protocol_decode_xlat_uctx_t);
+	xlat_pair_decode_uctx_t const	*decode_uctx = talloc_get_type_abort(*(void * const *)xctx->inst, xlat_pair_decode_uctx_t);
 	fr_test_point_pair_decode_t const	*tp_decode = decode_uctx->tp_decode;
 	fr_pair_t				*vp = NULL;
 	bool					created = false;
@@ -4165,13 +4308,13 @@ static xlat_action_t xlat_func_subnet_broadcast(TALLOC_CTX *ctx, fr_dcursor_t *o
 	return XLAT_ACTION_DONE;
 }
 
-static int protocol_xlat_instantiate(xlat_inst_ctx_t const *mctx)
+static int xlat_pair_dencode_instantiate(xlat_inst_ctx_t const *mctx)
 {
 	*(void **) mctx->inst = mctx->uctx;
 	return 0;
 }
 
-static xlat_arg_parser_t const protocol_encode_xlat_args[] = {
+static xlat_arg_parser_t const xlat_pair_encode_args[] = {
 	XLAT_ARG_PARSER_CURSOR,
 	{ .single = true, .type = FR_TYPE_ATTR },
 	XLAT_ARG_PARSER_TERMINATOR
@@ -4188,9 +4331,9 @@ static xlat_arg_parser_t const protocol_encode_xlat_args[] = {
  *
  * @ingroup xlat_functions
  */
-static xlat_action_t protocol_encode_xlat(TALLOC_CTX *ctx, fr_dcursor_t *out,
-					  xlat_ctx_t const *xctx,
-					  request_t *request, fr_value_box_list_t *args)
+static xlat_action_t xlat_pair_encode(TALLOC_CTX *ctx, fr_dcursor_t *out,
+				      xlat_ctx_t const *xctx,
+				      request_t *request, fr_value_box_list_t *args)
 {
 	fr_pair_t	*vp;
 	fr_dcursor_t	*cursor;
@@ -4316,7 +4459,7 @@ static int xlat_protocol_register_by_name(dl_t *dl, char const *name, fr_dict_t 
 {
 	fr_test_point_pair_decode_t *tp_decode;
 	fr_test_point_pair_encode_t *tp_encode;
-	protocol_decode_xlat_uctx_t *decode_uctx;
+	xlat_pair_decode_uctx_t *decode_uctx;
 	xlat_t *xlat;
 	char buffer[256+32];
 
@@ -4331,13 +4474,13 @@ static int xlat_protocol_register_by_name(dl_t *dl, char const *name, fr_dict_t 
 		/* May be called multiple times, so just skip protocols we've already registered */
 		if (xlat_func_find(buffer, -1)) return 1;
 
-		if (unlikely((xlat = xlat_func_register(NULL, buffer, protocol_decode_xlat, FR_TYPE_UINT32)) == NULL)) return -1;
-		xlat_func_args_set(xlat, protocol_decode_xlat_args);
-		decode_uctx = talloc(xlat, protocol_decode_xlat_uctx_t);
+		if (unlikely((xlat = xlat_func_register(NULL, buffer, xlat_pair_decode, FR_TYPE_UINT32)) == NULL)) return -1;
+		xlat_func_args_set(xlat, xlat_pair_decode_args);
+		decode_uctx = talloc(xlat, xlat_pair_decode_uctx_t);
 		decode_uctx->tp_decode = tp_decode;
 		decode_uctx->dict = dict;
 		/* coverity[suspicious_sizeof] */
-		xlat_func_instantiate_set(xlat, protocol_xlat_instantiate, protocol_decode_xlat_uctx_t *, NULL, decode_uctx);
+		xlat_func_instantiate_set(xlat, xlat_pair_dencode_instantiate, xlat_pair_decode_uctx_t *, NULL, decode_uctx);
 		xlat_func_flags_set(xlat, XLAT_FUNC_FLAG_INTERNAL);
 	}
 
@@ -4351,10 +4494,10 @@ static int xlat_protocol_register_by_name(dl_t *dl, char const *name, fr_dict_t 
 
 		if (xlat_func_find(buffer, -1)) return 1;
 
-		if (unlikely((xlat = xlat_func_register(NULL, buffer, protocol_encode_xlat, FR_TYPE_OCTETS)) == NULL)) return -1;
-		xlat_func_args_set(xlat, protocol_encode_xlat_args);
+		if (unlikely((xlat = xlat_func_register(NULL, buffer, xlat_pair_encode, FR_TYPE_OCTETS)) == NULL)) return -1;
+		xlat_func_args_set(xlat, xlat_pair_encode_args);
 		/* coverity[suspicious_sizeof] */
-		xlat_func_instantiate_set(xlat, protocol_xlat_instantiate, fr_test_point_pair_encode_t *, NULL, tp_encode);
+		xlat_func_instantiate_set(xlat, xlat_pair_dencode_instantiate, fr_test_point_pair_encode_t *, NULL, tp_encode);
 		xlat_func_flags_set(xlat, XLAT_FUNC_FLAG_INTERNAL);
 	}
 
@@ -4600,6 +4743,9 @@ do { \
 	XLAT_REGISTER_ARGS("str.rand", xlat_func_randstr, FR_TYPE_STRING, xlat_func_randstr_arg);
 	XLAT_REGISTER_ARGS("randstr", xlat_func_randstr, FR_TYPE_STRING, xlat_func_randstr_arg);
 	XLAT_NEW("str.rand");
+
+	XLAT_REGISTER_VOID("uuid.v4", xlat_func_uuid_v4, FR_TYPE_STRING);
+	XLAT_REGISTER_VOID("uuid.v7", xlat_func_uuid_v7, FR_TYPE_STRING);
 
 	XLAT_REGISTER_ARGS("range", xlat_func_range, FR_TYPE_UINT64, xlat_func_range_arg);
 

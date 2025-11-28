@@ -1,14 +1,51 @@
 * xref:index.adoc[Howto Guides]
 
-** xref:howto:installation/index.adoc[Install and Upgrade]
+** xref:howto:installation/index.adoc[Install]
 *** xref:howto:installation/dependencies.adoc[Dependencies]
 *** xref:howto:installation/packages.adoc[Install from Packages]
 *** xref:howto:installation/source.adoc[Build from Source]
 **** xref:howto:installation/debian.adoc[Debian and Ubuntu]
 **** xref:howto:installation/redhat.adoc[RedHat and Rocky]
 **** xref:howto:installation/osx.adoc[OSX]
-*** xref:howto:installation/upgrade.adoc[Upgrade from v3 to v4]
-**** xref:howto:installation/attribute_names.adoc[Attribute Name Changes from v3 to v4]
+
+** xref:howto:upgrade/index.adoc[Upgrade from v3]
+*** Configuration Files
+**** radiusd.conf
+*** Modules
+**** client
+**** radius
+**** cache
+**** couchbase
+**** counter
+**** eap
+**** exec
+**** mschap
+**** expiration
+**** ippool
+**** ldap
+**** logintime
+**** perl
+**** python
+**** radutmp
+**** rest
+**** sql
+***** Profiles
+***** MySQL
+***** PostgreSQL
+**** sqlcounter
+**** sqlippool
+**** unix
+**** winbind
+*** Processing Sections
+*** Unlang
+**** "&" is no longer used
+**** foreach
+**** update
+*** Dictionaries
+*** xref:howto:upgrade/attribute_names.adoc[All Attribute Names Have Changed]
+**** Deleted Virtual Attributes
+*** Proxying
+*** General Recommendations
 
 ** xref:modules/configuring_modules.adoc[Configure Modules]
 *** xref:modules/chap/index.adoc[CHAP]

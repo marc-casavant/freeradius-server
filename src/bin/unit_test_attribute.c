@@ -382,9 +382,9 @@ static void mismatch_print(command_file_ctx_t *cc, char const *command,
 			size_t glen, elen;
 
 			elen = strlen(e);
-			if (elen > 40) elen = 40;
+			if (elen > 70) elen = 70;
 			glen = strlen(g);
-			if (glen > 40) glen = 40;
+			if (glen > 70) glen = 70;
 
 			ERROR("(%zu) ... %.*s ... ", e - expected, (int) elen, e);
 			ERROR("(%zu) ... %.*s ... ", e - expected, (int) glen, g);
@@ -1225,6 +1225,78 @@ static size_t command_allow_unresolved(command_result_t *result, command_file_ct
 	cc->tmpl_rules.attr.allow_unresolved = res;
 
 	RETURN_OK(0);
+}
+
+#define ATTR_COMMON \
+	fr_sbuff_t		our_in = FR_SBUFF_IN(in, inlen); \
+	fr_dict_attr_err_t	err; \
+	fr_slen_t		slen; \
+	fr_dict_attr_t const	*root; \
+	fr_dict_attr_t const	*da; \
+	root = cc->tmpl_rules.attr.dict_def ? \
+		fr_dict_root(cc->tmpl_rules.attr.dict_def) : \
+		fr_dict_root(fr_dict_internal()); \
+	slen = fr_dict_attr_by_oid_substr(&err, \
+					  &da, \
+					  root, \
+					  &our_in, NULL); \
+	if (err != FR_DICT_ATTR_OK) FR_SBUFF_ERROR_RETURN(&our_in)
+
+
+/** Print attribute information
+ *
+ */
+static size_t command_attr_flags(command_result_t *result, command_file_ctx_t *cc,
+				 UNUSED char *data, UNUSED size_t data_used, char *in, size_t inlen)
+{
+	ATTR_COMMON;
+
+	slen = fr_dict_attr_flags_print(&FR_SBUFF_OUT(data, COMMAND_OUTPUT_MAX), da->dict, da->type, &da->flags);
+	if (slen <= 0) RETURN_OK_WITH_ERROR();
+
+	RETURN_OK(slen);
+}
+
+/** Print attribute information
+ *
+ */
+static size_t command_attr_name(command_result_t *result, command_file_ctx_t *cc,
+				 UNUSED char *data, UNUSED size_t data_used, char *in, size_t inlen)
+{
+	ATTR_COMMON;
+
+	slen = fr_dict_attr_oid_print(&FR_SBUFF_OUT(data, COMMAND_OUTPUT_MAX), root, da, false);
+	if (slen <= 0) RETURN_OK_WITH_ERROR();
+
+	RETURN_OK(slen);
+}
+
+/** Print attribute information
+ *
+ */
+static size_t command_attr_oid(command_result_t *result, command_file_ctx_t *cc,
+			       UNUSED char *data, UNUSED size_t data_used, char *in, size_t inlen)
+{
+	ATTR_COMMON;
+
+	slen = fr_dict_attr_oid_print(&FR_SBUFF_OUT(data, COMMAND_OUTPUT_MAX), root, da, true);
+	if (slen <= 0) RETURN_OK_WITH_ERROR();
+
+	RETURN_OK(slen);
+}
+
+/** Print attribute information
+ *
+ */
+static size_t command_attr_type(command_result_t *result, command_file_ctx_t *cc,
+			       UNUSED char *data, UNUSED size_t data_used, char *in, size_t inlen)
+{
+	ATTR_COMMON;
+
+	slen = fr_sbuff_in_strcpy(&FR_SBUFF_OUT(data, COMMAND_OUTPUT_MAX), fr_type_to_str(da->type));
+	if (slen <= 0) RETURN_OK_WITH_ERROR();
+
+	RETURN_OK(slen);
 }
 
 static const fr_token_t token2op[UINT8_MAX + 1] = {
@@ -3088,6 +3160,68 @@ static size_t command_xlat_purify(command_result_t *result, command_file_ctx_t *
 }
 
 
+/** Parse, purify, and reprint an xlat expression expansion
+ *
+ */
+static size_t command_xlat_purify_condition(command_result_t *result, command_file_ctx_t *cc,
+					    char *data, UNUSED size_t data_used, char *in, UNUSED size_t inlen)
+{
+	ssize_t			slen;
+	xlat_exp_head_t		*head = NULL;
+	size_t			input_len = strlen(in), escaped_len;
+	tmpl_rules_t		t_rules = (tmpl_rules_t) {
+						   .attr = {
+							.dict_def = dictionary_current(cc),
+							.allow_unresolved = cc->tmpl_rules.attr.allow_unresolved,
+							.list_def = request_attr_request,
+						   },
+						   .xlat = cc->tmpl_rules.xlat,
+						   .at_runtime = true,
+					   };
+
+	if (!el) {
+		fr_strerror_const("Flag '-p' not used.  xlat_purify is disabled");
+		goto return_error;
+	}
+	t_rules.xlat.runtime_el = el;
+
+	slen = xlat_tokenize_condition(cc->tmp_ctx, &head, &FR_SBUFF_IN(in, input_len), NULL, &t_rules);
+	if (slen == 0) {
+		fr_strerror_printf_push_head("ERROR failed to parse any input");
+		RETURN_OK_WITH_ERROR();
+	}
+
+	if (slen < 0) {
+		fr_strerror_printf_push_head("ERROR offset %d", (int) -slen - 1);
+	return_error:
+		RETURN_OK_WITH_ERROR();
+	}
+
+	if (((size_t) slen != input_len)) {
+		fr_strerror_printf_push_head("Passed in %zu characters, but only parsed %zd characters", input_len, slen);
+		goto return_error;
+	}
+
+	if (fr_debug_lvl > 2) {
+		DEBUG("Before purify --------------------------------------------------");
+		xlat_debug_head(head);
+	}
+
+	if (xlat_purify(head, NULL) < 0) {
+		fr_strerror_printf_push_head("ERROR purifying node - %s", fr_strerror());
+		goto return_error;
+	}
+
+	if (fr_debug_lvl > 2) {
+		DEBUG("After purify --------------------------------------------------");
+		xlat_debug_head(head);
+	}
+
+	escaped_len = xlat_print(&FR_SBUFF_OUT(data, COMMAND_OUTPUT_MAX), head, &fr_value_escape_double);
+	RETURN_OK(escaped_len);
+}
+
+
 /** Parse an reprint and xlat argv expansion
  *
  */
@@ -3151,6 +3285,40 @@ static fr_table_ptr_sorted_t	commands[] = {
 					.func = command_allow_unresolved,
 					.usage = "allow-unresolved yes|no",
 					.description = "Allow or disallow unresolved attributes in xlats and references"
+				}},
+	{ L("attr.flags"),	&(command_entry_t){
+					.func = command_attr_flags,
+					.usage = "attr.flags",
+					.description = "Return the flags of the named attribute",
+				}},
+	{ L("attr.name"),	&(command_entry_t){
+					.func = command_attr_name,
+					.usage = "attr.name",
+					.description = "Return the number of the named attribute",
+				}},
+#if 0
+	{ L("attr.number"),	&(command_entry_t){
+					.func = command_attr_number,
+					.usage = "attr.number",
+					.description = "Return the number of the named attribute",
+				}},
+#endif
+	{ L("attr.oid"),	&(command_entry_t){
+					.func = command_attr_oid,
+					.usage = "attr.oid",
+					.description = "Return the OID of the named attribute",
+				}},
+#if 0
+	{ L("attr.ref"),	&(command_entry_t){
+					.func = command_attr_ref,
+					.usage = "attr.ref",
+					.description = "Return the reference (if any) of the named attribute",
+				}},
+#endif
+	{ L("attr.type"),	&(command_entry_t){
+					.func = command_attr_type,
+					.usage = "attr.type",
+					.description = "Return the data type of the named attribute",
 				}},
 	{ L("calc "),		&(command_entry_t){
 					.func = command_calc,
@@ -3375,6 +3543,12 @@ static fr_table_ptr_sorted_t	commands[] = {
 					.func = command_xlat_purify,
 					.usage = "xlat_purify <string>",
 					.description = "Parse, purify, then print an xlat expression, writing the normalised xlat expansion to the data buffer"
+				}},
+
+	{ L("xlat_purify_cond "),	&(command_entry_t){
+					.func = command_xlat_purify_condition,
+					.usage = "xlat_purify_cond <string>",
+					.description = "Parse, purify, then print an xlat condition, writing the normalised xlat expansion to the data buffer"
 				}},
 
 };

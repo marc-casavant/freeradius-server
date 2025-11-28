@@ -35,7 +35,6 @@ RCSID("$Id$")
 #include <freeradius-devel/util/base16.h>
 #include <freeradius-devel/util/skip.h>
 
-
 /*
  *	For xlat_exp_head_alloc(), because xlat_copy() doesn't create an output head.
  */
@@ -548,7 +547,10 @@ static fr_slen_t tmpl_request_ref_list_from_substr(TALLOC_CTX *ctx, tmpl_attr_er
 	 */
 	if (namespace) {
 		if (at_rules->namespace) {
-			*namespace = at_rules->namespace;
+			/*
+			 *	If the namespace is FR_TYPE_GROUP use the correct namespace
+			 */
+			*namespace = at_rules->namespace->type == FR_TYPE_GROUP ? fr_dict_attr_ref(at_rules->namespace) : at_rules->namespace;
 		} else {
 			*namespace = NULL;
 		}
@@ -2097,7 +2099,6 @@ do_suffix:
 			break;
 
 		case FR_TYPE_STRUCTURAL_EXCEPT_GROUP:
-		is_union:
 			/*
 			 *	Structural types are parented and namespaced from their parent da.
 			 */
@@ -2105,14 +2106,6 @@ do_suffix:
 			break;
 
 		default:
-			/*
-			 *	Key fields can have children, because we really don't know how else to
-			 *	represent the child structures.
-			 *
-			 *	@todo - remove after migration_union_key is deleted
-			 */
-			if (fr_dict_attr_is_key_field(da)) goto is_union;
-
 			fr_strerror_printf("Parent type of nested attribute %s must be of type "
 					   "\"struct\", \"tlv\", \"vendor\", \"vsa\" or \"group\", got \"%s\"",
 					   da->name,
@@ -2226,7 +2219,9 @@ ssize_t tmpl_afrom_attr_substr(TALLOC_CTX *ctx, tmpl_attr_error_t *err,
 	/*
 	 *	'&' prefix is ignored.
 	 */
-	(void) fr_sbuff_next_if_char(&our_name, '&');
+	if (fr_sbuff_next_if_char(&our_name, '&') && check_config && at_rules->ci) {
+		cf_log_warn(at_rules->ci, "Using '&' is no longer necessary when referencing attributes, and should be deleted.");
+	}
 
 	/*
 	 *	We parsed the tmpl as User-Name, but NOT %{User-Name}.

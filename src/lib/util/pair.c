@@ -177,6 +177,7 @@ fr_pair_t *fr_pair_alloc_null(TALLOC_CTX *ctx)
 	}
 	talloc_set_destructor(vp, _fr_pair_free);
 
+	PAIR_ALLOCED(vp);
 	pair_init_null(vp);
 
 	return vp;
@@ -266,6 +267,7 @@ fr_pair_t *fr_pair_root_afrom_da(TALLOC_CTX *ctx, fr_dict_attr_t const *da)
 		return NULL;
 	}
 
+	PAIR_ALLOCED(vp);
 	pair_init_from_da(vp, da);
 
 	return vp;
@@ -305,6 +307,7 @@ fr_pair_t *fr_pair_afrom_da(TALLOC_CTX *ctx, fr_dict_attr_t const *da)
 		da = unknown;
 	}
 
+	PAIR_ALLOCED(vp);
 	pair_init_from_da(vp, da);
 
 	return vp;
@@ -392,6 +395,7 @@ fr_pair_t *fr_pair_afrom_child_num(TALLOC_CTX *ctx, fr_dict_attr_t const *parent
 		da = unknown;
 	}
 
+	PAIR_ALLOCED(vp);
 	pair_init_from_da(vp, da);
 
 	return vp;
@@ -423,6 +427,7 @@ fr_pair_t *fr_pair_afrom_da_depth_nested(TALLOC_CTX *ctx, fr_pair_list_t *list, 
 	 */
 	if (da->depth == (start + 1)) {
 		if (fr_pair_append_by_da(ctx, &vp, list, da) < 0) return NULL;
+		PAIR_ALLOCED(vp);
 		return vp;
 	}
 
@@ -436,6 +441,7 @@ fr_pair_t *fr_pair_afrom_da_depth_nested(TALLOC_CTX *ctx, fr_pair_list_t *list, 
 		vp = fr_pair_find_by_da(cur_list, NULL, find);
 		if (!vp || (vp->da == da)) {
 			if  (fr_pair_append_by_da(cur_ctx, &vp, cur_list, find) < 0) return NULL;
+			PAIR_ALLOCED(vp);
 		}
 
 		if (find == da) return vp;
@@ -471,6 +477,7 @@ fr_pair_t *fr_pair_afrom_da_nested(TALLOC_CTX *ctx, fr_pair_list_t *list, fr_dic
 		fr_pair_t *vp;
 
 		if  (fr_pair_append_by_da(ctx, &vp, list, da) < 0) return NULL;
+		PAIR_ALLOCED(vp);
 		return vp;
 	}
 
@@ -497,6 +504,7 @@ fr_pair_t *fr_pair_copy(TALLOC_CTX *ctx, fr_pair_t const *vp)
 	if (!n) return NULL;
 
 	n->op = vp->op;
+	PAIR_ALLOCED(n);
 
 	/*
 	 *	Groups are special.
@@ -1548,6 +1556,7 @@ int fr_pair_append_by_da_parent(TALLOC_CTX *ctx, fr_pair_t **out, fr_pair_list_t
 				if (out) *out = NULL;
 				return -1;
 			}
+			PAIR_ALLOCED(vp);
 		}
 
 		/*
@@ -1651,6 +1660,7 @@ int fr_pair_update_by_da_parent(fr_pair_t *parent, fr_pair_t **out,
 				if (out) *out = NULL;
 				return -1;
 			}
+			PAIR_ALLOCED(vp);
 		}
 
 		/*
@@ -3080,7 +3090,7 @@ int fr_pair_value_enum_box(fr_value_box_t const **out, fr_pair_t *vp)
 /*
  *	Verify a fr_pair_t
  */
-void fr_pair_verify(char const *file, int line, fr_pair_list_t const *list, fr_pair_t const *vp)
+void fr_pair_verify(char const *file, int line, fr_dict_attr_t const *parent_da, fr_pair_list_t const *list, fr_pair_t const *vp)
 {
 	(void) talloc_get_type_abort_const(vp, fr_pair_t);
 
@@ -3089,6 +3099,26 @@ void fr_pair_verify(char const *file, int line, fr_pair_list_t const *list, fr_p
 	}
 
 	fr_dict_attr_verify(file, line, vp->da);
+
+
+	/*
+	 *	Enforce correct parentage.  If the parent exists, AND it's not a group (because groups break
+	 *	the strict hierarchy), then check parentage.
+	 *
+	 *	We also ignore parentage if either the expected parent or the vp is raw / unknown.  We may
+	 *	want to tighten that a little bit, as there are cases where we create raw / unknown
+	 *	attributes, and the parent is also raw / unknown.  In which case the parent_da _should_ be the
+	 *	same as vp->da->parent.
+	 */
+	if (parent_da && (parent_da->type != FR_TYPE_GROUP) &&
+	    !parent_da->flags.is_raw && !parent_da->flags.is_unknown &&
+	    !vp->da->flags.is_raw && !vp->da->flags.is_unknown) {
+		fr_fatal_assert_msg(vp->da->parent == parent_da,
+				    "CONSISTENCY CHECK FAILED %s[%d]:  pair %s does not have the correct parentage - "
+				    "expected parent %s, found different parent %s",
+				    file, line, vp->da->name, vp->da->parent->name, parent_da->name);
+	}
+
 	if (list) {
 		fr_fatal_assert_msg(fr_pair_order_list_parent(vp) == &list->order,
 				    "CONSISTENCY CHECK FAILED %s[%d]:  pair does not have the correct parentage "
@@ -3253,7 +3283,7 @@ void fr_pair_verify(char const *file, int line, fr_pair_list_t const *list, fr_p
 					    file, line,
 					    child->da->name, child->da->parent->name, vp->da->name);
 
-			fr_pair_verify(file, line, &vp->vp_group, child);
+			fr_pair_verify(file, line, vp->da, &vp->vp_group, child);
 		}
 
 	       UNCONST(fr_pair_t *, vp)->vp_group.verified = true;

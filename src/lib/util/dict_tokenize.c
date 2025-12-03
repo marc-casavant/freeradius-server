@@ -605,7 +605,8 @@ static int dict_flag_key(fr_dict_attr_t **da_p, char const *value, UNUSED fr_dic
 	}
 
 	/*
-	 *	Allocate the ref and save the value.
+	 *	Allocate the ref and save the value.  This link exists solely so that the children of the
+	 *	UNION can easily find the key field of the parent STRUCT.
 	 */
 	ext = fr_dict_attr_ext(da, FR_DICT_ATTR_EXT_KEY);
 	if (ext) {
@@ -1375,7 +1376,6 @@ static int dict_read_process_alias(dict_tokenize_ctx_t *dctx, char **argv, int a
 {
 	fr_dict_attr_t const	*da;
 	fr_dict_attr_t const	*parent = CURRENT_FRAME(dctx)->da;
-	fr_dict_attr_t const	*ref_namespace;
 
 	if (argc != 2) {
 		fr_strerror_const("Invalid ALIAS syntax");
@@ -1416,30 +1416,33 @@ static int dict_read_process_alias(dict_tokenize_ctx_t *dctx, char **argv, int a
 	/*
 	 *	Relative refs get resolved from the current namespace.
 	 */
-	if (argv[1][0] == '.') {
-		ref_namespace = parent;
+	if (argv[1][0] == '@') {
+		fr_strerror_const("An ALIAS reference cannot cross protocol boundaries");
+		return -1;
 
-	} else {
-		/*
-		 *	No dot, so we're looking in the root namespace.
-		 */
-		ref_namespace = dctx->dict->root;
+	} else if (argv[1][0] == '.') {
+		if (argv[1][1] == '.') goto no_up;
+
+	} else if (parent != dctx->dict->root) {
+	no_up:
+		fr_strerror_const("An ALIAS reference cannot go back up the tree");
+		return -1;
 	}
 
 	/*
 	 *	The <ref> can be a name.
 	 */
-	da = fr_dict_attr_by_oid(NULL, ref_namespace, argv[1]);
+	da = fr_dict_attr_by_oid(NULL, parent, argv[1]);
 	if (!da) {
 		/*
-		 *	If we can't find it now, the file
-		 *	containing the ALIASes may have
-		 *	been allowed before the ALIASed
-		 *	attributes.
+		 *	If we can't find it now, the file containing the ALIASes may have been read before
+		 *	the ALIASed attributes.
+		 *
+		 *	@todo - we likely just want to forbid this.
 		 */
 		return dict_fixup_alias_enqueue(&dctx->fixup, CURRENT_FILENAME(dctx), CURRENT_LINE(dctx),
 					fr_dict_attr_unconst(parent), argv[0],
-					fr_dict_attr_unconst(ref_namespace), argv[1]);
+					fr_dict_attr_unconst(parent), argv[1]);
 	}
 
 	return dict_attr_alias_add(fr_dict_attr_unconst(parent), argv[0], da);
@@ -1547,7 +1550,6 @@ static int dict_read_process_attribute(dict_tokenize_ctx_t *dctx, char **argv, i
 		key = ext->ref;
 		fr_assert(key);
 		fr_assert(fr_dict_attr_is_key_field(key));
-		da = UNCONST(fr_dict_attr_t *, key);
 	}
 
 	da = dict_attr_alloc_null(dctx->dict->pool, dctx->dict->proto);

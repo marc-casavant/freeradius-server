@@ -357,6 +357,7 @@ redo:
 
 				if (!vp) return fr_sbuff_error(&our_in);
 
+				PAIR_ALLOCED(vp);
 				PAIR_VERIFY(vp);
 
 				/*
@@ -376,7 +377,7 @@ redo:
 				}
 
 				/*
-				 *	Update the new relative information for the current VP, which
+				 *	update the new relative information for the current VP, which
 				 *	may be structural, or a key field.
 				 */
 				fr_assert(!fr_sbuff_is_char(&our_in, '.')); /* be sure the loop exits */
@@ -434,11 +435,13 @@ redo:
 					if (fr_pair_append_by_da(relative->ctx, &vp, relative->list, da) < 0) {
 						return fr_sbuff_error(&our_in);
 					}
+					PAIR_ALLOCED(vp);
 				}
 			} else {
 				vp = fr_pair_afrom_da(relative->ctx, da);
 				if (!vp) return fr_sbuff_error(&our_in);
 
+				PAIR_ALLOCED(vp);
 				fr_pair_append(relative->list, vp);
 			}
 
@@ -480,6 +483,7 @@ redo:
 				fr_dict_attr_unknown_free(&da_unknown);
 				return fr_sbuff_error(&our_in);
 			}
+			PAIR_ALLOCED(vp);
 
 			fr_dict_attr_unknown_free(&da_unknown);
 
@@ -510,6 +514,7 @@ redo:
 				if (fr_pair_append_by_da(grand_vp, &vp, &grand_vp->vp_group, parent_vp->da) < 0) {
 					return fr_sbuff_error(&our_in);
 				}
+				PAIR_ALLOCED(vp);
 
 				relative->ctx = vp;
 				fr_assert(relative->da == vp->da);
@@ -522,6 +527,7 @@ redo:
 			vp = fr_pair_afrom_da_depth_nested(relative->ctx, relative->list, da,
 							   relative->da->depth);
 			if (!vp) return fr_sbuff_error(&our_in);
+			PAIR_ALLOCED(vp);
 		}
 
 		fr_assert(vp != NULL);
@@ -553,6 +559,20 @@ redo:
 			break;
 
 		default:
+			/*
+			 *	A leaf attribute MUST be the last one in the list.  We can no longer have
+			 *	"key" fields which contain children.
+			 */
+			if (fr_sbuff_is_char(&our_in, '.')) {
+				if (fr_dict_attr_is_key_field(da)) {
+					fr_strerror_printf("Please remove the reference to key field '%s' from the input string",
+							   da->name);
+				} else {
+					fr_strerror_printf("Leaf attribute '%s' cannot have children", da->name);
+				}
+
+				return fr_sbuff_error(&our_in);
+			}
 			break;
 
 		case FR_TYPE_INTERNAL:

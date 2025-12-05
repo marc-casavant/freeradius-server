@@ -32,6 +32,9 @@ RUN apt-get update \
  && rm -rf /var/lib/apt/lists/* /tmp/debs \
  && ln -s /etc/freeradius /etc/raddb
 
+# Copy MIB files. Useful for SNMP-based monitoring.
+COPY share/snmp/mibs/*.mib /usr/share/snmp/mibs/
+
 #
 # Entrypoint and runtime config
 #

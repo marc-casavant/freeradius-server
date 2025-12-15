@@ -1305,6 +1305,19 @@ void unlang_interpret_request_prioritise(request_t *request, uint32_t priority)
 	if (intp->funcs.prioritise) intp->funcs.prioritise(request, intp->uctx);
 }
 
+/** Cancel any pending retry
+ *
+ * @param[in] request		The current request.
+ */
+void unlang_interpret_request_cancel_retry(request_t *request)
+{
+	unlang_stack_t			*stack = request->stack;
+	unlang_stack_frame_t		*frame = &stack->frame[stack->depth];
+
+	TALLOC_FREE(frame->retry);
+}
+
+
 /** Delivers a frame to one or more frames in the stack
  *
  * This is typically called via an "async" action, i.e. an action outside
@@ -1369,6 +1382,11 @@ void unlang_stack_signal(request_t *request, fr_signal_t action, int limit)
 			 *	where it can accept further signals.
 			 */
 			if (action == FR_SIGNAL_CANCEL) frame->signal = NULL;
+
+			/*
+			 *	If the frame is cancelled, we don't do any retries.
+			 */
+			TALLOC_FREE(frame->retry);
 		}
 	}
 }

@@ -331,11 +331,9 @@ if test "x$ax_cv_cc_clang" = "xyes"; then
   AX_CC_UNWINDLIB_ARG
   AC_SUBST(clang_path, "$CC")
 
-  dnl # Needed for builtins to function correctly (https://bugs.gentoo.org/702344)
-  LDFLAGS="$LDFLAGS --rtlib=compiler-rt"
-
   if test "x$ax_cv_cc_unwindlib_arg" = "xyes"; then
-    LDFLAGS="$LDFLAGS --unwindlib=libunwind"
+    dnl # For GCC, use --rtlib=libgcc --unwindlib=libgcc
+    LDFLAGS="$LDFLAGS --rtlib=compiler-rt --unwindlib=libunwind"
   fi
 else
   AC_SUBST(clang_path, "")
@@ -1205,7 +1203,7 @@ AC_ARG_WITH(libbacktrace,
     WITH_BACKTRACE=no
     ;;
   yes)
-    if ! test -f src/lib/backtrace/configure || git submodule update --init src/lib/backtrace > /dev/null 2>&1; then
+    if ! test -f src/lib/backtrace/configure && ! git submodule update --init src/lib/backtrace > /dev/null 2>&1; then
       AC_MSG_ERROR([--with-libbacktrace=yes requires the backtrace submodule to be checked out.  Please run 'git submodule update --init src/lib/backtrace'.])
     fi
     WITH_BACKTRACE=yes
@@ -1962,55 +1960,55 @@ if test "x$developer" = "xyes"; then
   AX_CC_WEVERYTHING_FLAG
   if test "x$ax_cv_cc_weverything_flag" = "xyes"; then
     devcflags="$devcflags \
-	-W \
-	-Weverything \
-	-Wformat=2 \
-	-Wno-date-time \
-	-Wno-disabled-macro-expansion \
-	-Wno-format-pedantic \
-    	-Wno-cast-align \
-    	-Wno-conversion \
-    	-Wno-covered-switch-default \
-    	-Wno-documentation-unknown-command \
-    	-Wno-extended-offsetof \
-    	-Wno-gnu-empty-initializer \
-    	-Wno-gnu-statement-expression \
-    	-Wno-gnu-zero-variadic-macro-arguments \
-    	-Wno-packed \
-    	-Wno-padded \
-    	-Wno-poison-system-directories \
-    	-Wno-reserved-id-macro \
-    	-Wno-shorten-64-to-32 \
-    	-Wno-sign-conversion \
-    	-Wno-switch-enum \
-	-Wno-unreachable-code-generic-assoc \
-    	-Wno-vla \
-        $verify_ptr"
-  else
-    if test "x$GCC" = "xyes"; then
-      devcflags="$devcflags \
-      	-W \
-      	-Wall \
-      	-Wcast-align \
-      	-Wcast-qual \
-      	-Wformat-nonliteral \
-      	-Wformat-security \
-      	-Wformat-y2k \
-      	-Wformat=2 \
-      	-Wmissing-declarations \
-      	-Wmissing-prototypes \
-      	-Wnested-externs \
-      	-Wno-format-extra-args \
-      	-Wno-format-zero-length \
-      	-Wpointer-arith \
-      	-Wredundant-decls \
-      	-Wshadow \
-      	-Wstrict-prototypes \
-      	-Wundef \
-      	-Wwrite-strings \
-	$verify_ptr"
-      INSTALLSTRIP=""
-    fi
+      -W \
+      -Weverything \
+      -Wformat=2 \
+      -Wno-date-time \
+      -Wno-disabled-macro-expansion \
+      -Wno-format-pedantic \
+      -Wno-cast-align \
+      -Wno-conversion \
+      -Wno-covered-switch-default \
+      -Wno-default-const-init-field-unsafe \
+      -Wno-documentation-unknown-command \
+      -Wno-extended-offsetof \
+      -Wno-gnu-empty-initializer \
+      -Wno-gnu-statement-expression \
+      -Wno-gnu-zero-variadic-macro-arguments \
+      -Wno-packed \
+      -Wno-padded \
+      -Wno-poison-system-directories \
+      -Wno-reserved-id-macro \
+      -Wno-shorten-64-to-32 \
+      -Wno-sign-conversion \
+      -Wno-switch-enum \
+      -Wno-unreachable-code-generic-assoc \
+      -Wno-vla \
+      $verify_ptr"
+  elif test "x$GCC" = "xyes"; then
+    devcflags="$devcflags \
+      -W \
+      -Wall \
+      -Wcast-align \
+      -Wcast-qual \
+      -Wformat-nonliteral \
+      -Wformat-security \
+      -Wformat-y2k \
+      -Wformat=2 \
+      -Wmissing-declarations \
+      -Wmissing-prototypes \
+      -Wnested-externs \
+      -Wno-default-const-init-field-unsafe \
+      -Wno-format-extra-args \
+      -Wno-format-zero-length \
+      -Wpointer-arith \
+      -Wredundant-decls \
+      -Wshadow \
+      -Wstrict-prototypes \
+      -Wundef \
+      -Wwrite-strings \
+      $verify_ptr"
+    INSTALLSTRIP=""
   fi
 
   dnl #

@@ -120,7 +120,7 @@ done:
 /*
  *	Make many things easier
  */
-#define return_slen return slen - fr_dbuff_used(&work_dbuff)
+#define return_slen return FR_DBUFF_ERROR_OFFSET(slen, fr_dbuff_used(&work_dbuff))
 
 /*
  *	Octets is length + data
@@ -1002,7 +1002,10 @@ ssize_t fr_cbor_decode_value_box(TALLOC_CTX *ctx, fr_value_box_t *vb, fr_dbuff_t
 
 	if (type == FR_TYPE_NULL) {
 		type = cbor_guess_type(&work_dbuff, false);
-		if (type == FR_TYPE_NULL) return 0;
+		if (type == FR_TYPE_NULL) {
+			fr_strerror_const("Unable to determine data type from cbor");
+			return -1;
+		}
 	}
 
 	fr_value_box_init(vb, type, enumv, tainted);
@@ -1016,7 +1019,7 @@ ssize_t fr_cbor_decode_value_box(TALLOC_CTX *ctx, fr_value_box_t *vb, fr_dbuff_t
 	if (((info >= 28) && (info <= 30)) ||
 	    ((info == 31) && ((major == 0) || (major == 1) || (major == 6)))) {
 		fr_strerror_const("Invalid cbor data - input is not 'well formed'");
-		return 0;
+		return -1;
 	}
 
 	switch (major) {
@@ -1031,7 +1034,7 @@ ssize_t fr_cbor_decode_value_box(TALLOC_CTX *ctx, fr_value_box_t *vb, fr_dbuff_t
 		if (info == 31) {
 		no_chunks:
 			fr_strerror_const("Chunked strings are not supported");
-			return 0;
+			return -1;
 		}
 
 
@@ -1414,7 +1417,10 @@ ssize_t fr_cbor_decode_value_box(TALLOC_CTX *ctx, fr_value_box_t *vb, fr_dbuff_t
 			 *	We have to decode at least one value.
 			 */
 			slen = fr_cbor_decode_value_box(child, child, &work_dbuff, FR_TYPE_NULL, NULL, tainted);
-			if (slen <= 0) return_slen;
+			if (slen <= 0) {
+				talloc_free(child);
+				return_slen;
+			}
 
 			fr_value_box_list_insert_tail(&vb->vb_group, child);
 		}
@@ -1636,8 +1642,8 @@ static fr_type_t cbor_guess_type(fr_dbuff_t *dbuff, bool pair)
 	return FR_TYPE_NULL;
 }
 
-ssize_t fr_cbor_decode_pair(TALLOC_CTX *ctx, fr_pair_list_t *out, fr_dbuff_t *dbuff,
-			    fr_dict_attr_t const *parent, bool tainted)
+static ssize_t cbor_decode_pair(TALLOC_CTX *ctx, fr_pair_list_t *out, fr_dbuff_t *dbuff,
+				fr_dict_attr_t const *parent, bool tainted, int depth)
 {
 	fr_dbuff_t work_dbuff = FR_DBUFF(dbuff);
 	uint8_t header, major, info;
@@ -1676,12 +1682,23 @@ ssize_t fr_cbor_decode_pair(TALLOC_CTX *ctx, fr_pair_list_t *out, fr_dbuff_t *db
 		return_slen;
 	}
 
+	/*
+	 *	If the nesting is too deep, decode as raw octets.  We have to do this manually in CBOR,
+	 *	because the other protocols create a da_stack which limits the depth.
+	 */
+	if (depth >= FR_DICT_MAX_TLV_STACK) goto raw;
+
 	da = fr_dict_attr_child_by_num(parent, value);
 	if (!da) {
 		fr_type_t type;
 
 		type = cbor_guess_type(&work_dbuff, true);
 		if (type == FR_TYPE_NULL) return -fr_dbuff_used(&work_dbuff);
+
+		if (depth >= FR_DICT_MAX_TLV_STACK) {
+		raw:
+			type = FR_TYPE_OCTETS;
+		}
 
 		/*
 		 *	@todo - the value here isn't a cbor octets type, but is instead cbor data.  Since cbor
@@ -1690,12 +1707,11 @@ ssize_t fr_cbor_decode_pair(TALLOC_CTX *ctx, fr_pair_list_t *out, fr_dbuff_t *db
 		 *	data types.
 		 */
 		da = fr_dict_attr_unknown_typed_afrom_num(ctx, parent, value, type);
-		if (!da) goto oom;
+		if (!da) return -fr_dbuff_used(&work_dbuff);
 	}
 
 	vp = fr_pair_afrom_da(ctx, da);
 	if (!vp) {
-	oom:
 		fr_strerror_const("Out of memory");
 		return -fr_dbuff_used(&work_dbuff);
 	}
@@ -1705,7 +1721,7 @@ ssize_t fr_cbor_decode_pair(TALLOC_CTX *ctx, fr_pair_list_t *out, fr_dbuff_t *db
 	 */
 	if (fr_type_is_leaf(da->type)) {
 		slen = fr_cbor_decode_value_box(vp, &vp->data, &work_dbuff, da->type, da, tainted);
-		if (slen <= 0) {
+		if (slen < 0) {
 			talloc_free(vp);
 			return_slen;
 		}
@@ -1809,7 +1825,7 @@ ssize_t fr_cbor_decode_pair(TALLOC_CTX *ctx, fr_pair_list_t *out, fr_dbuff_t *db
 			break;
 		}
 
-		slen = fr_cbor_decode_pair(vp, &vp->vp_group, &work_dbuff, parent, tainted);
+		slen = cbor_decode_pair(vp, &vp->vp_group, &work_dbuff, parent, tainted, depth + 1);
 		if (slen <= 0) {
 			talloc_free(vp);
 			return_slen;
@@ -1821,6 +1837,12 @@ done:
 
 	fr_pair_append(out, vp);
 	return fr_dbuff_set(dbuff, &work_dbuff);
+}
+
+ssize_t fr_cbor_decode_pair(TALLOC_CTX *ctx, fr_pair_list_t *out, fr_dbuff_t *dbuff,
+			    fr_dict_attr_t const *parent, bool tainted)
+{
+	return cbor_decode_pair(ctx, out, dbuff, parent, tainted, 0);
 }
 
 /*

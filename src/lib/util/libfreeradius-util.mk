@@ -129,8 +129,16 @@ TGT_PREREQS	+= libbacktrace.la
 TGT_LDLIBS	+= '-lbacktrace'
 TGT_LDFLAGS	+= -L$(top_builddir)/build/lib/local/.libs
 
+#
+#  Our local backtrace.c file needs the soft link to be created.
+#
+src/include/backtrace:
+	cd src/include && ln -s ../lib/backtrace
+
+build/objs/src/lib/util/backtrace.$(OBJ_EXT): | src/include/backtrace
+
 # Actually call the 'sub'-make to build libbacktrace.
-src/lib/backtrace/.libs/libbacktrace.a:
+src/lib/backtrace/libbacktrace.la src/lib/backtrace/.libs/libbacktrace.a:
 	$(MAKE) -C $(top_srcdir)/src/lib/backtrace
 
 # We need to do this so jlibtool can find the library.

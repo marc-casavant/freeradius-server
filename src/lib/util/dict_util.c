@@ -603,7 +603,6 @@ int dict_attr_type_init(fr_dict_attr_t **da_p, fr_type_t type)
 	 */
 	switch (type) {
 	case FR_TYPE_STRUCTURAL:
-	structural:
 		/*
 		 *	Groups don't have children or namespaces.  But
 		 *	they always have refs.  Either to the root of
@@ -627,14 +626,6 @@ int dict_attr_type_init(fr_dict_attr_t **da_p, fr_type_t type)
 
 		(*da_p)->last_child_attr = (1 << 24);	/* High enough not to conflict with protocol numbers */
 		break;
-
-	/*
-	 *	Keying types *sigh*
-	 */
-	case FR_TYPE_UINT8:	/* Hopefully temporary until unions are done properly */
-	case FR_TYPE_UINT16:	/* Same here */
-		if (dict_attr_enumv_init(da_p) < 0) return -1;
-		goto structural;
 
 	/*
 	 *	Leaf types
@@ -681,7 +672,9 @@ int dict_attr_type_init(fr_dict_attr_t **da_p, fr_type_t type)
  */
 int dict_attr_parent_init(fr_dict_attr_t **da_p, fr_dict_attr_t const *parent)
 {
-	fr_dict_attr_t *da = *da_p;
+	fr_dict_attr_t		  *da = *da_p;
+	fr_dict_t const		  *dict = parent->dict;
+	fr_dict_attr_ext_vendor_t *ext;
 
 	if (unlikely((*da_p)->type == FR_TYPE_NULL)) {
 		fr_strerror_const("Attribute type must be set before initialising parent.  Use dict_attr_type_init() first");
@@ -703,17 +696,39 @@ int dict_attr_parent_init(fr_dict_attr_t **da_p, fr_dict_attr_t const *parent)
 	da->parent = parent;
 	da->dict = parent->dict;
 	da->depth = parent->depth + 1;
+	da->flags.internal |= parent->flags.internal;
 
 	/*
 	 *	Point to the vendor definition.  Since ~90% of
 	 *	attributes are VSAs, caching this pointer will help.
 	 */
+	if (da->type == FR_TYPE_VENDOR) {
+		da->flags.type_size = dict->root->flags.type_size;
+		da->flags.length = dict->root->flags.type_size;
+
+		if ((dict->root->attr == FR_DICT_PROTO_RADIUS) && (da->depth == 2)) {
+			fr_dict_vendor_t const *dv;
+
+			dv = fr_dict_vendor_by_num(dict, da->attr);
+			if (dv) {
+				da->flags.type_size = dv->type;
+				da->flags.length = dv->length;
+			}
+		}
+
+	} else if (da->type == FR_TYPE_TLV) {
+		da->flags.type_size = dict->root->flags.type_size;
+		da->flags.length = dict->root->flags.type_size;
+	}
+
 	if (parent->type == FR_TYPE_VENDOR) {
-		int ret = dict_attr_vendor_set(&da, parent);
-		*da_p = da;
-		if (ret < 0) return -1;
+		ext = dict_attr_ext_alloc(da_p, FR_DICT_ATTR_EXT_VENDOR);
+		if (unlikely(!ext)) return -1;
+
+		ext->vendor = parent;
+
 	} else {
-		dict_attr_ext_copy(da_p, parent, FR_DICT_ATTR_EXT_VENDOR); /* Noop if no vendor extension */
+		ext = dict_attr_ext_copy(da_p, parent, FR_DICT_ATTR_EXT_VENDOR); /* Noop if no vendor extension */
 	}
 
 	/*
@@ -721,6 +736,13 @@ int dict_attr_parent_init(fr_dict_attr_t **da_p, fr_dict_attr_t const *parent)
 	 *	to generate it at runtime.
 	 */
 	dict_attr_da_stack_set(da_p);
+
+	da = *da_p;
+
+	if (!ext || ((da->type != FR_TYPE_TLV) && (da->type != FR_TYPE_VENDOR))) return 0;
+
+	da->flags.type_size = ext->vendor->flags.type_size;
+	da->flags.length = ext->vendor->flags.type_size;
 
 	return 0;
 }
@@ -860,6 +882,23 @@ int dict_attr_init_common(char const *filename, int line,
 
 	if (args->ref && (dict_attr_ref_aset(da_p, args->ref, FR_DICT_ATTR_REF_ALIAS) < 0)) return -1;
 
+	/*
+	 *	Everything should be created correctly.
+	 */
+	if (!(*da_p)->flags.internal && !(*da_p)->flags.is_alias &&
+	    parent && ((parent->type == FR_TYPE_TLV) || (parent->type ==FR_TYPE_VENDOR))) {
+		if (!parent->flags.type_size) {
+			fr_strerror_printf("Parent %s has zero type_size", parent->name);
+			return -1;
+		}
+
+		if ((uint64_t) (*da_p)->attr >= ((uint64_t) 1 << (8 * parent->flags.type_size))) {
+			fr_strerror_printf("Child of parent %s has invalid attribute number %u for type_size %u",
+					   parent->name, (*da_p)->attr, parent->flags.type_size);
+			return -1;
+		}
+	}
+
 	return 0;
 }
 
@@ -895,9 +934,15 @@ int _dict_attr_init(char const *filename, int line,
 		    char const *name, unsigned int attr,
 		    fr_type_t type, dict_attr_args_t const *args)
 {
-	if (unlikely(dict_attr_init_common(filename, line, da_p, parent, type, args) < 0)) return -1;
-
+	/*
+	 *	We initialize the number first, as doing that doesn't have any other side effects.
+	 */
 	if (unlikely(dict_attr_num_init(*da_p, attr) < 0)) return -1;
+
+	/*
+	 *	This function then checks the number, for things like VSAs.
+	 */
+	if (unlikely(dict_attr_init_common(filename, line, da_p, parent, type, args) < 0)) return -1;
 
 	if (unlikely(dict_attr_finalise(da_p, name) < 0)) return -1;
 
@@ -1641,18 +1686,6 @@ int dict_vendor_add(fr_dict_t *dict, char const *name, unsigned int num)
 }
 
 /** See if a #fr_dict_attr_t can have children
- *
- *  The check for children is complicated by the need for "int" types
- *  to have children, when they are `key` fields in a `struct`.  This
- *  situation occurs when a struct has multiple sub-structures, which
- *  are selected based on a `key` field.
- *
- *  There is no other place for the sub-structures to go.  In the
- *  future, we may extend the functionality of the `key` field, by
- *  allowing non-integer data types.  That would require storing keys
- *  as #fr_dict_enum_value_t, and then placing the child (i.e. sub)
- *  structures there.  But that would involve adding children to
- *  enums, which is currently not supported.
  *
  * @param da the dictionary attribute to check.
  */
@@ -2435,17 +2468,6 @@ ssize_t fr_dict_attr_by_oid_legacy(fr_dict_t const *dict, fr_dict_attr_t const *
 		fr_strerror_printf("Attribute %s (%u) cannot contain a child attribute.  "
 				   "Error at sub OID \"%s\"", (*parent)->name, (*parent)->attr, oid);
 		return 0;	/* We parsed nothing */
-	}
-
-	/*
-	 *	TLVs must have a defined size.
-	 */
-	if (((*parent)->type == FR_TYPE_TLV) &&
-	    (!(*parent)->flags.internal && !(*parent)->flags.name_only && !(*parent)->flags.is_root &&
-	     (num > ((uint64_t) 1 << (8 * (*parent)->flags.type_size))))) {
-		fr_strerror_printf("TLV attributes of parent %s must be %" PRIu64 " bits or less",
-				   (*parent)->name, ((uint64_t)1 << (8 * (*parent)->flags.type_size)));
-		return 0;
 	}
 
 	switch (p[0]) {
@@ -4281,8 +4303,8 @@ fr_dict_t *fr_dict_protocol_alloc(fr_dict_t const *parent)
 		.is_root = true,
 		.local = true,
 		.internal = true,
-		.type_size = 2,
-		.length = 2
+		.type_size = parent->root->flags.type_size,
+		.length = parent->root->flags.length,
 	};
 
 	dict = dict_alloc(UNCONST(fr_dict_t *, parent));

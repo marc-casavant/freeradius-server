@@ -3090,7 +3090,8 @@ int fr_pair_value_enum_box(fr_value_box_t const **out, fr_pair_t *vp)
 /*
  *	Verify a fr_pair_t
  */
-void fr_pair_verify(char const *file, int line, fr_dict_attr_t const *parent_da, fr_pair_list_t const *list, fr_pair_t const *vp)
+void fr_pair_verify(char const *file, int line, fr_dict_attr_t const *parent_da,
+		    fr_pair_list_t const *list, fr_pair_t const *vp, bool verify_values)
 {
 	(void) talloc_get_type_abort_const(vp, fr_pair_t);
 
@@ -3139,14 +3140,36 @@ void fr_pair_verify(char const *file, int line, fr_dict_attr_t const *parent_da,
 					     file, line, vp->da->name, vp->da->parent->name, parent->da->name);
 		}
 
-#if 0
+		/*
+		 *	The data types have to agree, except for comb-ip and combo-ipaddr.
+		 */
+		if (vp->vp_type != vp->da->type) switch (vp->da->type) {
+		case FR_TYPE_COMBO_IP_ADDR:
+			if ((vp->vp_type == FR_TYPE_IPV4_ADDR) ||
+			    (vp->vp_type == FR_TYPE_IPV6_ADDR)) {
+				    break;
+			    }
+			goto failed_type;
+
+		case FR_TYPE_COMBO_IP_PREFIX:
+			if ((vp->vp_type == FR_TYPE_IPV4_PREFIX) ||
+			    (vp->vp_type == FR_TYPE_IPV6_PREFIX)) {
+				break;
+			}
+			FALL_THROUGH;
+
+		default:
+			failed_type:
+			fr_fatal_assert_fail("CONSISTENCY CHECK FAILED %s[%d]: fr_pair_t \"%s\" has value of data type '%s', which disagrees with the dictionary data type '%s'",
+					     file, line, vp->da->name, fr_type_to_str(vp->vp_type), fr_type_to_str(vp->da->type));
+		}
+
 		/*
 		 *	We would like to enable this, but there's a
 		 *	lot of code like fr_pair_append_by_da() which
 		 *	creates the #fr_pair_t with no value.
 		 */
-		fr_value_box_verify(file, line, &vp->data);
-#endif
+		if (verify_values) fr_value_box_verify(file, line, &vp->data);
 
 	} else {
 		fr_pair_t *parent = fr_pair_parent(vp);
@@ -3156,7 +3179,7 @@ void fr_pair_verify(char const *file, int line, fr_dict_attr_t const *parent_da,
 					     file, line, vp->da->name);
 		}
 
-		fr_pair_list_verify(file, line, vp, &vp->vp_group);
+		fr_pair_list_verify(file, line, vp, &vp->vp_group, verify_values);
 	}
 
 	switch (vp->vp_type) {
@@ -3283,7 +3306,7 @@ void fr_pair_verify(char const *file, int line, fr_dict_attr_t const *parent_da,
 					    file, line,
 					    child->da->name, child->da->parent->name, vp->da->name);
 
-			fr_pair_verify(file, line, vp->da, &vp->vp_group, child);
+			fr_pair_verify(file, line, vp->da, &vp->vp_group, child, verify_values);
 		}
 
 	       UNCONST(fr_pair_t *, vp)->vp_group.verified = true;
@@ -3339,8 +3362,9 @@ void fr_pair_verify(char const *file, int line, fr_dict_attr_t const *parent_da,
  * @param[in] line	number in file
  * @param[in] expected	talloc ctx pairs should have been allocated in
  * @param[in] list	of fr_pair_ts to verify
+ * @param[in] verify_values whether we verify the values, too.
  */
-void fr_pair_list_verify(char const *file, int line, TALLOC_CTX const *expected, fr_pair_list_t const *list)
+void fr_pair_list_verify(char const *file, int line, TALLOC_CTX const *expected, fr_pair_list_t const *list, bool verify_values)
 {
 	fr_pair_t		*slow, *fast;
 	TALLOC_CTX		*parent;
@@ -3355,7 +3379,7 @@ void fr_pair_list_verify(char const *file, int line, TALLOC_CTX const *expected,
 	for (slow = fr_pair_list_head(list), fast = fr_pair_list_head(list);
 	     slow && fast;
 	     slow = fr_pair_list_next(list, slow), fast = fr_pair_list_next(list, fast)) {
-		PAIR_VERIFY_WITH_LIST(list, slow);
+		fr_pair_verify(__FILE__, __LINE__, NULL, list, slow, verify_values);
 
 		/*
 		 *	Advances twice as fast as slow...
@@ -3384,7 +3408,7 @@ void fr_pair_list_verify(char const *file, int line, TALLOC_CTX const *expected,
 	 *	Check the remaining pairs
 	 */
 	for (; slow; slow = fr_pair_list_next(list, slow)) {
-		PAIR_VERIFY_WITH_LIST(list, slow);
+		fr_pair_verify(__FILE__, __LINE__, NULL, list, slow, verify_values);
 
 		parent = talloc_parent(slow);
 		if (expected && (parent != expected)) goto bad_parent;
@@ -3519,6 +3543,8 @@ void fr_pair_list_afrom_box(TALLOC_CTX *ctx, fr_pair_list_t *out, fr_dict_t cons
 		.ctx = ctx,
 		.da = fr_dict_root(dict),
 		.list = out,
+		.dict = dict,
+		.internal = fr_dict_internal(),
 		.allow_crlf = true,
 		.tainted = box->tainted,
 	};

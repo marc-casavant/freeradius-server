@@ -317,8 +317,8 @@ static int dict_root_set(fr_dict_t *dict, char const *name, unsigned int proto_n
 
 	fr_dict_attr_flags_t flags = {
 		.is_root = 1,
-		.type_size = 1,
-		.length = 1
+		.type_size = dict->proto->default_type_size,
+		.length = dict->proto->default_type_length,
 	};
 
 	if (!fr_cond_assert(!dict->root)) {
@@ -461,14 +461,22 @@ static int dict_process_type_field(dict_tokenize_ctx_t *dctx, char const *name, 
 		return -1;
 
 	case FR_TYPE_LEAF:
-	case FR_TYPE_STRUCTURAL:
+	case FR_TYPE_TLV:
+	case FR_TYPE_STRUCT:
+	case FR_TYPE_VSA:
+	case FR_TYPE_GROUP:
+	case FR_TYPE_UNION:
 		break;
 
-	case FR_TYPE_VALUE_BOX:
-	case FR_TYPE_VOID:
-	case FR_TYPE_VALUE_BOX_CURSOR:
-	case FR_TYPE_PAIR_CURSOR:
-	case FR_TYPE_MAX:
+		/*
+		 *	@todo - allow definitions of type 'vendor' only if we need to have different
+		 *	type_size/length for VSAs or "evs" in the Extended-Attribute space.
+		 */
+	case FR_TYPE_VENDOR:
+		fr_strerror_const("Cannot use data type 'vendor' - use BEGIN-VENDOR instead");
+		return -1;
+
+	default:
 		fr_strerror_printf("Invalid data type '%s'", name);
 		return -1;
 	}
@@ -1115,12 +1123,20 @@ static int dict_read_process_common(dict_tokenize_ctx_t *dctx, fr_dict_attr_t **
 				    fr_dict_attr_flags_t const *base_flags)
 {
 	fr_dict_attr_t *da, *to_free = NULL;
+	size_t len;
 
 	/*
-	 *	Dictionaries need to have real names, not shitty ones.
+	 *	Dictionaries need to have real names, not v3-style ones "Attr-#".  And not ones which are
+	 *	solely numerical.
 	 */
 	if (strncmp(name, "Attr-", 5) == 0) {
-		fr_strerror_const("Invalid name");
+		fr_strerror_const("Invalid name - 'Attr-' is an invalid name");
+		return -1;
+	}
+
+	len = strlen(name);
+	if (fr_sbuff_adv_past_allowed( &FR_SBUFF_IN(name, len), SIZE_MAX, sbuff_char_class_int, NULL) == len) {
+		fr_strerror_printf("Invalid attribute name '%s' - the name cannot be an integer", name);
 		return -1;
 	}
 
@@ -1833,7 +1849,6 @@ static int dict_read_process_begin_vendor(dict_tokenize_ctx_t *dctx, char **argv
 				    	  UNUSED fr_dict_attr_flags_t *base_flags)
 {
 	fr_dict_vendor_t const		*vendor;
-	fr_dict_attr_flags_t		flags;
 
 	fr_dict_attr_t const		*vsa_da;
 	fr_dict_attr_t const		*vendor_da;
@@ -1912,33 +1927,14 @@ static int dict_read_process_begin_vendor(dict_tokenize_ctx_t *dctx, char **argv
 	}
 
 	/*
-	 *	Create a VENDOR attribute on the fly, either in the context
-	 *	of the VSA (26) attribute.
+	 *	Check if the VENDOR attribute exists under this VSA.  If not, create one.
+	 *
+	 *	@todo - There are no vendor fixups, so if the vendor has unusual type sizes, it MUST be
+	 *	defined before the BEGIN-VENDOR is used.
 	 */
 	vendor_da = dict_attr_child_by_num(vsa_da, vendor->pen);
 	if (!vendor_da) {
-		memset(&flags, 0, sizeof(flags));
-
-		flags.type_size = dctx->dict->proto->default_type_size;
-		flags.length = dctx->dict->proto->default_type_length;
-
-		/*
-		 *	See if this vendor has
-		 *	specific sizes for type /
-		 *	length.
-		 *
-		 *	@todo - Make this more protocol agnostic!
-		 */
-		if ((vsa_da->type == FR_TYPE_VSA) &&
-			(vsa_da->parent->flags.is_root)) {
-			fr_dict_vendor_t const *dv;
-
-			dv = fr_dict_vendor_by_num(dctx->dict, vendor->pen);
-			if (dv) {
-				flags.type_size = dv->type;
-				flags.length = dv->length;
-			}
-		}
+		fr_dict_attr_flags_t flags = {};
 
 		new = dict_attr_alloc(dctx->dict->pool,
 				      vsa_da, argv[0], vendor->pen, FR_TYPE_VENDOR,
@@ -2805,6 +2801,28 @@ static int dict_read_process_vendor(dict_tokenize_ctx_t *dctx, char **argv, int 
 	return 0;
 }
 
+/** The main protocols that we care about.
+ *
+ *	Not all of them are listed here, but that should be fine.
+ *
+ */
+static fr_table_num_ordered_t const dict_proto_table[] = {
+	{ L("RADIUS"),		FR_DICT_PROTO_RADIUS },
+	{ L("DHCPv4"),		FR_DICT_PROTO_DHCPv4 },
+	{ L("DHCPv6"),		FR_DICT_PROTO_DHCPv6 },
+	{ L("Ethernet"),       	FR_DICT_PROTO_ETHERNET },
+	{ L("TACACS"),		FR_DICT_PROTO_TACACS },
+	{ L("VMPS"),		FR_DICT_PROTO_VMPS },
+	{ L("SNMP"),		FR_DICT_PROTO_SNMP },
+	{ L("ARP"),		FR_DICT_PROTO_ARP },
+	{ L("TFTP"),		FR_DICT_PROTO_TFTP },
+	{ L("TLS"),		FR_DICT_PROTO_TLS },
+	{ L("DNS"),		FR_DICT_PROTO_DNS },
+	{ L("LDAP"),		FR_DICT_PROTO_LDAP },
+	{ L("BFD"),		FR_DICT_PROTO_BFD },
+};
+static size_t const dict_proto_table_len = NUM_ELEMENTS(dict_proto_table);
+
 /** Register the specified dictionary as a protocol dictionary
  *
  * Allows vendor and TLV context to persist across $INCLUDEs
@@ -2814,7 +2832,8 @@ static int dict_read_process_protocol(dict_tokenize_ctx_t *dctx, char **argv, in
 	unsigned int	value;
 	unsigned int	type_size = 0;
 	fr_dict_t	*dict;
-	fr_dict_attr_t	*mutable;
+	unsigned int	required_value;
+	char const	*required_name;
 	bool		require_dl = false;
 	bool		string_based = false;
 
@@ -2847,6 +2866,26 @@ static int dict_read_process_protocol(dict_tokenize_ctx_t *dctx, char **argv, in
 	 */
 	if (!value) {
 		fr_strerror_printf("Invalid value '%u' following PROTOCOL", value);
+		return -1;
+	}
+
+	/*
+	 *	While the numbers are in the dictionaries, the administrator cannot change "RADIUS" to be a
+	 *	different number.  Similarly, they can't assign the RADIUS number to a different protocol.
+	 */
+	required_value = fr_table_value_by_str(dict_proto_table, argv[0], 0);
+	if (required_value && (required_value != value)) {
+		fr_strerror_printf("Invalid value '%u' following PROTOCOL - expected '%u'", value, required_value);
+		return -1;
+	}
+
+	/*
+	 *	And the administrator can't define the name to be a different number.
+	 */
+	required_name = fr_table_str_by_value(dict_proto_table, value, NULL);
+	if (required_name && (strcasecmp(required_name, argv[0]) != 0)) {
+		fr_strerror_printf("Invalid value '%u' for PROTOCOL '%s' - that value is already used by '%s'",
+				   value, argv[0], required_name);
 		return -1;
 	}
 
@@ -2951,12 +2990,11 @@ post_option:
 
 	if (dict_protocol_add(dict) < 0) goto error;
 
-	mutable = UNCONST(fr_dict_attr_t *, dict->root);
 	dict->string_based = string_based;
-	if (!type_size) {
-		mutable->flags.type_size = dict->proto->default_type_size;
-		mutable->flags.length = dict->proto->default_type_length;
-	} else {
+	if (type_size) {
+		fr_dict_attr_t	*mutable;
+
+		mutable = UNCONST(fr_dict_attr_t *, dict->root);
 		mutable->flags.type_size = type_size;
 		mutable->flags.length = 1; /* who knows... */
 	}

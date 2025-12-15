@@ -229,8 +229,7 @@ ssize_t fr_struct_from_network(TALLOC_CTX *ctx, fr_pair_list_t *out,
 			 *	of the input is suspect.
 			 */
 			if (child_length > (size_t) (end - p)) {
-				FR_PROTO_TRACE("fr_struct_from_network - child length %zu overflows buffer", child_length);
-				goto remainder_raw;
+				child_length = (size_t) (end - p);
 			}
 		}
 
@@ -285,13 +284,6 @@ ssize_t fr_struct_from_network(TALLOC_CTX *ctx, fr_pair_list_t *out,
 		 *	we reach the union.  See dict_tokenize.
 		 */
 		case FR_TYPE_UNION:
-			fr_assert(!fr_dict_attr_child_by_num(parent, child_num + 1));
-			if (!key_vp) {
-			remainder_raw:
-				child_length = end - p;
-				goto raw;
-			}
-
 			/*
 			 *	Create the union wrapper, and reset the child_ctx and child_list to it.
 			 */
@@ -302,6 +294,14 @@ ssize_t fr_struct_from_network(TALLOC_CTX *ctx, fr_pair_list_t *out,
 			substruct_da = child;
 			child_ctx = vp;
 			child_list = &vp->vp_group;
+
+			fr_assert(!fr_dict_attr_child_by_num(parent, child_num + 1)); /* has to be the last one */
+			if (!key_vp) {
+			remainder_raw:
+				child_length = (size_t) (end - p);
+				goto raw;
+			}
+
 			goto substruct;
 		}
 
@@ -623,6 +623,19 @@ static ssize_t encode_union(fr_dbuff_t *dbuff, fr_dict_attr_t const *wrapper,
 	}
 
 	/*
+	 *	@todo - encode the key field based on the attribute number?
+	 *
+	 *	However, we are likely better off just not doing that.
+	 *	Which allows us to have the key and UNION contents
+	 *	disagree.
+	 */
+	if (!found && child->da->flags.is_unknown) {
+		fr_assert(child->da->type == FR_TYPE_OCTETS);
+
+		goto encode;
+	}
+
+	/*
 	 *	No child matching the key vp was found.  Either there's no key_vp, or the key_vp doesn't match
 	 *	the chld we have.
 	 *
@@ -672,6 +685,7 @@ static ssize_t encode_union(fr_dbuff_t *dbuff, fr_dict_attr_t const *wrapper,
 	/*
 	 *	And finally encode the one child.
 	 */
+encode:
 	FR_PROTO_TRACE("fr_struct_to_network union %s encoding child %s", parent->da->name, child->da->name);
 	fr_proto_da_stack_build(da_stack, child->da);
 	FR_PROTO_STACK_PRINT(da_stack, depth);
@@ -743,6 +757,7 @@ ssize_t fr_struct_to_network(fr_dbuff_t *dbuff,
 	bool			do_length = false;
 	uint8_t			bit_buffer = 0;
 	fr_pair_t const		*vp = fr_dcursor_current(parent_cursor);
+	fr_pair_t const		*last = NULL;
 	fr_pair_t const		*key_vp = NULL;
 	fr_dict_attr_t const   	*child, *parent, *key_da = NULL;
 	fr_dcursor_t		child_cursor, *cursor;
@@ -845,6 +860,15 @@ ssize_t fr_struct_to_network(fr_dbuff_t *dbuff,
 		FR_PROTO_TRACE("fr_struct_to_network child %s", child->name);
 
 		/*
+		 *	If the caller specifies a member twice, then we only encode the first member.
+		 */
+		while (last && vp && (last->da->parent == vp->da->parent) && (last->da->attr == vp->da->attr)) {
+			fr_assert(last != vp);
+			vp = fr_dcursor_next(cursor);
+		}
+		last = vp;
+
+		/*
 		 *	The MEMBER may be raw, in which case it is encoded as octets.
 		 *
 		 *	This can happen for the last MEMBER of a struct, such as when the last member is a TLV
@@ -888,6 +912,7 @@ ssize_t fr_struct_to_network(fr_dbuff_t *dbuff,
 					fr_strerror_printf("Failed encoding bit field %s", child->name);
 					return offset;
 				}
+				last = NULL;
 				continue;
 			}
 
@@ -902,6 +927,11 @@ ssize_t fr_struct_to_network(fr_dbuff_t *dbuff,
 			 *	Zero out the unused field.
 			 */
 			FR_DBUFF_MEMSET_RETURN(&work_dbuff, 0, child->flags.length);
+
+			/*
+			 *	We didn't encode the current VP, so it's not the last one.
+			 */
+			last = NULL;
 			continue;
 		}
 
@@ -950,6 +980,10 @@ ssize_t fr_struct_to_network(fr_dbuff_t *dbuff,
 				return offset;
 			}
 
+			/*
+			 *	We have to go to the next pair manually, as the protocol-specific
+			 *	encode_value() function will normally go to the next cursor entry.
+			 */
 			vp = fr_dcursor_next(cursor);
 			/* We need to continue, there may be more fields to encode */
 

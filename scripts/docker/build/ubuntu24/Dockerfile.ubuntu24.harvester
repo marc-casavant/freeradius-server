@@ -54,6 +54,11 @@ RUN if [ -e ./debian/control.in ]; then \
     echo 'y' | mk-build-deps -irt'apt-get -yV' debian/control
 
 #
+# Disable performance impacting macros
+#
+#RUN ./configure --disable-verify-ptr
+
+#
 #  Build the server
 #
 RUN make -j$(nproc) deb

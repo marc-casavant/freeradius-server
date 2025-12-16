@@ -47,6 +47,11 @@ else
 	CFLAGS += -O2
 endif
 
+# If environment variable FR_CONFFLAGS is set, append it to confflags.
+# This is useful when building Docker containers to enable/disable specific features.
+FR_CONFFLAGS ?=
+confflags += $(FR_CONFFLAGS)
+
 ifeq ($(DEB_BUILD_GNU_TYPE), $(DEB_HOST_GNU_TYPE))
 	confflags += --build $(DEB_HOST_GNU_TYPE)
 else

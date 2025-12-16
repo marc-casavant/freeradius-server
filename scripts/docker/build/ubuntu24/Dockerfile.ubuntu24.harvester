@@ -42,8 +42,17 @@ RUN printf 'deb [trusted=yes] file:/opt/localrepo stable main\n' \
 #  any cruft left around on the local system
 #
 RUN git config --global --add safe.directory /usr/local/src/repositories/freeradius-server \
- && git clean -fdxx \
- && git reset --hard HEAD
+ && git clean -fdxx
+
+# Not recommended during development, but useful to ensure a clean build
+# RUN git reset --hard HEAD
+
+#
+# Disable performance impacting macros. devian/rules
+# will append this to the configure flags.
+#
+ARG FR_CONFFLAGS="--disable-verify-ptr"
+ENV FR_CONFFLAGS="${FR_CONFFLAGS}"
 
 #
 #  Install build dependencies
@@ -54,16 +63,8 @@ RUN if [ -e ./debian/control.in ]; then \
     echo 'y' | mk-build-deps -irt'apt-get -yV' debian/control
 
 #
-# Disable performance impacting macros
-#
-#RUN ./configure --disable-verify-ptr
-
-#
 #  Build the server
 #
 RUN make -j$(nproc) deb
 
-# Deb artifacts: /usr/local/src/repositories/*.deb
-# Local repo debs (libkqueue, etc.): /opt/localrepo/pool/...
-#
 # Harvester-only: no entrypoint, no EXPOSE.

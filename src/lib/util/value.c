@@ -3763,7 +3763,7 @@ int fr_value_box_cast(TALLOC_CTX *ctx, fr_value_box_t *dst,
 		ret = fr_value_box_copy(ctx, dst, src);
 		if (ret < 0) return ret;
 
-		dst->enumv = dst_enumv;
+		if (dst_enumv) dst->enumv = dst_enumv;
 
 		return ret;
 	}
@@ -3895,6 +3895,10 @@ int fr_value_box_cast(TALLOC_CTX *ctx, fr_value_box_t *dst,
 		return fr_value_box_cast_in_place(ctx, dst, dst_type, dst_enumv);
 #else
 	case FR_TYPE_ATTR:
+		if (src->type == FR_TYPE_STRING) break;
+
+		FALL_THROUGH;
+
 #endif
 	/*
 	 *	Invalid types for casting (were caught earlier)
@@ -5639,8 +5643,8 @@ parse:
 		if (dst_enumv->type == FR_TYPE_ATTR) {
 			if (!dst_enumv->flags.has_value) dst_enumv = fr_dict_root(dst_enumv->dict);
 
-		} else if (!dst_enumv->flags.is_root) {
-			fr_strerror_printf("Can only start from dictionary root for data type 'attribute', and not from %s", dst_enumv->name);
+		} else if (dst_enumv->type != FR_TYPE_TLV) {
+			fr_strerror_printf("Can only start from data type 'tlv' for data type 'attribute', and not from %s", dst_enumv->name);
 			return -1;
 		}
 
@@ -5685,23 +5689,36 @@ parse:
 			fr_sbuff_advance(&our_in, len);
 			FR_SBUFF_SET_RETURN(in, &our_in);
 
-		} else if (fr_sbuff_adv_past_str_literal(&our_in, "::")) {
+		} else {
+			fr_dict_attr_t const *da;
+
+			(void) fr_sbuff_adv_past_str_literal(&our_in, "::");
 
 			slen = fr_dict_attr_by_oid_substr(NULL, &dst->vb_attr, dst_enumv, &our_in, rules->terminals);
 			if (slen > 0) {
 				fr_assert(dst->vb_attr != NULL);
-				FR_SBUFF_SET_RETURN(in, &our_in);
+
+				if (!fr_sbuff_next_if_char(&our_in, '.')) {
+					FR_SBUFF_SET_RETURN(in, &our_in);
+				}
+
+				/*
+				 *	The next bit MUST be an unknown attribute.
+				 */
 			}
-		}
 
-		slen = fr_dict_attr_unknown_afrom_oid_substr(ctx, &dst->vb_attr, dst_enumv, &our_in, FR_TYPE_OCTETS);
-		if (slen <= 0) {
-			fr_strerror_printf("Failed to find the named attribute in %s", dst_enumv->name);
-			return -2;
-		}
+			if (!fr_sbuff_is_digit(&our_in)) {
+			invalid_attr:
+				fr_strerror_printf_push("Failed to find the attribute in %s", dst_enumv->name);
+				return -2;
+			}
 
-		fr_assert(dst->vb_attr != NULL);
-		FR_SBUFF_SET_RETURN(in, &our_in);
+			slen = fr_dict_attr_unknown_afrom_oid_substr(ctx, &da, dst->vb_attr, &our_in, FR_TYPE_OCTETS);
+			if (slen <= 0) goto invalid_attr;
+
+			dst->vb_attr = da;
+			FR_SBUFF_SET_RETURN(in, &our_in);
+		}
 
 	/*
 	 *	Dealt with below
@@ -5975,16 +5992,35 @@ ssize_t fr_value_box_print(fr_sbuff_t *out, fr_value_box_t const *data, fr_sbuff
 		FR_SBUFF_IN_CHAR_RETURN(&our_out, '}');
 		break;
 
-	case FR_TYPE_ATTR:
+	case FR_TYPE_ATTR: {
+		fr_dict_attr_t const *parent = NULL;
+		fr_sbuff_t *unescaped = NULL;
+
 		FR_SBUFF_IN_CHAR_RETURN(&our_out, ':', ':');
 
-		fr_assert(data->enumv != NULL);
+		if (!data->enumv) {
+			fr_strerror_const("Value of type 'attribute' is missing the enum");
+			return -1;
+		}
+
+		switch (data->enumv->type) {
+		case FR_TYPE_TLV:
+			parent = data->enumv;
+			break;
+
+		case FR_TYPE_ATTR: /* will print from the root */
+			break;
+
+		default:
+			fr_assert_msg(0, "Invalid data type for 'attr' enumv");
+			break;
+		}
 
 		/*
 		 *	No escaping, just dump the name as-is.
 		 */
 		if (!e_rules) {
-			FR_DICT_ATTR_OID_PRINT_RETURN(&our_out, NULL, data->vb_attr, false);
+			FR_DICT_ATTR_OID_PRINT_RETURN(&our_out, parent, data->vb_attr, false);
 			break;
 		}
 
@@ -5992,15 +6028,12 @@ ssize_t fr_value_box_print(fr_sbuff_t *out, fr_value_box_t const *data, fr_sbuff
 		 *	Escaping, use an intermediate buffer.  Because
 		 *	we can't pipe sbuffs together.
 		 */
-		{
-			fr_sbuff_t *unescaped = NULL;
+		FR_SBUFF_TALLOC_THREAD_LOCAL(&unescaped, 256, 4096);
 
-			FR_SBUFF_TALLOC_THREAD_LOCAL(&unescaped, 256, 4096);
+		FR_DICT_ATTR_OID_PRINT_RETURN(unescaped, parent, data->vb_attr, false);
 
-			FR_DICT_ATTR_OID_PRINT_RETURN(unescaped, NULL, data->vb_attr, false);
-
-			FR_SBUFF_IN_ESCAPE_RETURN(&our_out, fr_sbuff_start(unescaped),
-						  fr_sbuff_used(unescaped), e_rules);
+		FR_SBUFF_IN_ESCAPE_RETURN(&our_out, fr_sbuff_start(unescaped),
+					  fr_sbuff_used(unescaped), e_rules);
 		}
 		break;
 

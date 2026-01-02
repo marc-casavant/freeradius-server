@@ -28,6 +28,9 @@ LOGFILE=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
+    -h|--help)
+      usage
+      ;;
     --extra-packages-repo)
       if [[ -n "$2" ]]; then
         FR_EXTRA_PACKAGES_REPO="$2"

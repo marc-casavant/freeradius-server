@@ -2271,6 +2271,155 @@ ssize_t fr_value_box_from_network(TALLOC_CTX *ctx,
 	return fr_dbuff_set(dbuff, &work_dbuff);
 }
 
+typedef struct {
+	int		af;
+	int		prefix_min;
+	int		prefix_max;
+	size_t		addr_min;
+	size_t		addr_max;
+} fr_value_box_ipaddr_sizes_t;
+
+static const fr_value_box_ipaddr_sizes_t ipaddr_sizes[FR_TYPE_MAX] = {
+	[FR_TYPE_IPV4_ADDR] = {
+		AF_INET, 32, 32, 0, 4,
+	},
+
+	[FR_TYPE_IPV4_PREFIX] = {
+		AF_INET, 0, 32, 0, 4,
+	},
+
+	[FR_TYPE_IPV6_ADDR] = {
+		AF_INET6, 128, 128, 16, 16,
+	},
+
+	[FR_TYPE_IPV6_PREFIX] = {
+		AF_INET6, 0, 128, 0, 16,
+	},
+};
+
+/** Decode a #fr_value_box_t of type IP address / prefix.
+ *
+ *  This function also gets passed a prefix length, and is a bit more
+ *  forgiving that fr_value_box_from_network().
+ *
+ * @param[out] dst	value_box to write the result to.
+ * @param[in] type	to decode data to.
+ * @param[in] enumv	Aliases for values.
+ * @param[in] prefix_len for prefix types
+ * @param[in] data	Binary data to decode.
+ * @param[in] data_len	Length of data to decode.
+ * @param[in] fixed	is this a fixed size, or a variable one?
+ * @param[in] tainted	Whether the value came from a trusted source.
+ * @return
+ *	- >= 0 The number of bytes consumed.
+ *	- <0 - an error occurred.
+ */
+ssize_t fr_value_box_ipaddr_from_network(fr_value_box_t *dst, fr_type_t type, fr_dict_attr_t const *enumv,
+					 int prefix_len, uint8_t const *data, size_t data_len,
+					 bool fixed, bool tainted)
+{
+	switch (type) {
+	case FR_TYPE_IPV4_ADDR:
+	case FR_TYPE_IPV4_PREFIX:
+	case FR_TYPE_IPV6_ADDR:
+	case FR_TYPE_IPV6_PREFIX:
+		break;
+
+	default:
+		fr_strerror_printf("Invalid data type '%s' passed to IP address decode function",
+				   fr_type_to_str(type));
+		return 0;
+	}
+
+	/*
+	 *	Check the allowed values for prefix length.
+	 */
+	if (prefix_len < ipaddr_sizes[type].prefix_min) {
+		fr_strerror_printf("Invalid prefix length %d, expected at least %d",
+				   prefix_len, ipaddr_sizes[type].prefix_min);
+		return -1;
+	}
+
+	if (prefix_len > ipaddr_sizes[type].prefix_max) {
+		fr_strerror_printf("Invalid prefix length '%d', expected no more than %d",
+				   prefix_len, ipaddr_sizes[type].prefix_max);
+		return -1;
+	}
+
+	/*
+	 *	It's a prefix data type.  Verify that the prefix length doesn't require more bytes than we
+	 *	have.
+	 *
+	 *	@todo - some protocols allow a larger prefix, and then set the extra bytes to zero.  <sigh>
+	 */
+	if (!ipaddr_sizes[type].addr_min) {
+		if (fr_bytes_from_bits(prefix_len) > data_len) {
+			fr_strerror_printf("Invalid prefix length '%d' - it requires %u bytes of data, and there are only %zu bytes of data",
+					   prefix_len, fr_bytes_from_bits(prefix_len), data_len);
+			return -1;
+		}
+	}
+
+	/*
+	 *	Check how much data is in the buffer.
+	 */
+	if (data_len < ipaddr_sizes[type].addr_min) {
+		fr_strerror_printf("Invalid address length '%zu', expected at least %zu",
+				   data_len, ipaddr_sizes[type].addr_min);
+		return -1;
+	}
+
+	/*
+	 *	Do various checks for the size.
+	 */
+	if (enumv && enumv->flags.array) {
+		/*
+		 *	If this field is part of an array, then it has to be fixed size.
+		 */
+		data_len = ipaddr_sizes[type].addr_max;
+
+	} else if (fixed) {
+		/*
+		 *	If it's fixed size, it must be the maximum size.
+		 */
+		if (data_len != ipaddr_sizes[type].addr_max) {
+			fr_strerror_printf("Invalid address length '%zu', expected at exactly %zu",
+					   data_len, ipaddr_sizes[type].addr_max);
+			return -1;
+		}
+
+		/*
+		 *	There is more data in the array - limit what we read to the size of the address.
+		 */
+		data_len = ipaddr_sizes[type].addr_max;
+
+	} else if (data_len > ipaddr_sizes[type].addr_max) {
+		fr_strerror_printf("Invalid address length '%zu', expected no more than %zu",
+				   data_len, ipaddr_sizes[type].addr_max);
+		return -1;
+	}
+
+	fr_value_box_init(dst, type, enumv, tainted);
+	dst->vb_ip = (fr_ipaddr_t) {
+		.af = ipaddr_sizes[type].af,
+		.prefix = prefix_len,
+		/* automatically initialize vp_ip.addr to all zeros */
+	};
+
+	if (!data_len) return 0;
+
+	fr_assert(data_len <= sizeof(dst->vb_ip.addr));
+
+	memcpy((uint8_t *) &dst->vb_ip.addr, data, data_len);
+
+	/*
+	 *	@todo - maybe it's an error to have bits set outsize of the prefix length.
+	 */
+	fr_ipaddr_mask(&dst->vb_ip, prefix_len);
+
+	return data_len;
+}
+
 /** Get a key from a value box
  *
  * @param[in,out] out - set to a small buffer on input.  If the callback has more data
@@ -4979,11 +5128,38 @@ void fr_value_box_set_cursor(fr_value_box_t *dst, fr_type_t type, void *cursor, 
 	dst->vb_cursor_name = name;
 }
 
+static fr_dict_attr_t const *fr_value_box_attr_enumv(fr_dict_attr_t const *da)
+{
+	fr_dict_attr_ext_ref_t *ext;
+
+	/*
+	 *	If the DA points to a root (e.g. OID-Tree), then use that.
+	 *
+	 *	Otherwise if it doesn't have ENUMs defined, then point it at the dict root.
+	 *
+	 *	If it does have enums, then the enumv is itself.
+	 */
+	ext = fr_dict_attr_ext(da, FR_DICT_ATTR_EXT_REF);
+	if (ext) {
+		fr_assert(ext->type == FR_DICT_ATTR_REF_ROOT);
+		fr_assert(!da->flags.has_value);
+
+		 return ext->ref;
+	}
+
+	if (!da->flags.has_value) {
+		return fr_dict_root(da->dict);
+	}
+
+	return da;
+}
+
 void fr_value_box_set_attr(fr_value_box_t *dst, fr_dict_attr_t const *da)
 {
 	fr_value_box_init(dst, FR_TYPE_ATTR, NULL, false);
 	dst->vb_attr = da;
-	dst->enumv = da;
+
+	dst->enumv = fr_value_box_attr_enumv(da);
 }
 
 /** Increment a boxed value
@@ -5641,7 +5817,7 @@ parse:
 		 *	carry a ref to where their values are taken from.
 		 */
 		if (dst_enumv->type == FR_TYPE_ATTR) {
-			if (!dst_enumv->flags.has_value) dst_enumv = fr_dict_root(dst_enumv->dict);
+			dst_enumv = fr_value_box_attr_enumv(dst_enumv);
 
 		} else if (dst_enumv->type != FR_TYPE_TLV) {
 			fr_strerror_printf("Can only start from data type 'tlv' for data type 'attribute', and not from %s", dst_enumv->name);
@@ -5649,6 +5825,8 @@ parse:
 		}
 
 		fr_value_box_init(dst, dst_type, dst_enumv, false);
+
+		(void) fr_sbuff_adv_past_str_literal(&our_in, "::");
 
 		/*
 		 *	Allow '@' references in values.
@@ -5692,7 +5870,7 @@ parse:
 		} else {
 			fr_dict_attr_t const *da;
 
-			(void) fr_sbuff_adv_past_str_literal(&our_in, "::");
+			fr_assert(dst_enumv != NULL);
 
 			slen = fr_dict_attr_by_oid_substr(NULL, &dst->vb_attr, dst_enumv, &our_in, rules->terminals);
 			if (slen > 0) {

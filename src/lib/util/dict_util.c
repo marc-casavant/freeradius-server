@@ -587,8 +587,10 @@ static inline CC_HINT(always_inline) int dict_attr_namespace_init(fr_dict_attr_t
  */
 int dict_attr_type_init(fr_dict_attr_t **da_p, fr_type_t type)
 {
-	if (unlikely((*da_p)->type != FR_TYPE_NULL)) {
-		fr_strerror_const("Attribute type already set");
+	if (unlikely(((*da_p)->type != FR_TYPE_NULL) &&
+		     ((*da_p)->type != type))) {
+		fr_strerror_printf("Cannot set data type to '%s' - it is already set to '%s'",
+				   fr_type_to_str(type), fr_type_to_str((*da_p)->type));
 		return -1;
 	}
 
@@ -616,7 +618,7 @@ int dict_attr_type_init(fr_dict_attr_t **da_p, fr_type_t type)
 		 *	parentage.  Perhaps that can be changed when
 		 *	the encoders / decoders are updated.  It would be good to just reference the DAs instead of cloning an entire subtree.
 		 */
-		if (type == FR_TYPE_GROUP) {
+		if ((type == FR_TYPE_GROUP) && !fr_dict_attr_ext(*da_p, FR_DICT_ATTR_EXT_REF)) {
 			if (dict_attr_ext_alloc(da_p, FR_DICT_ATTR_EXT_REF) == NULL) return -1;
 			break;
 		}
@@ -1464,6 +1466,7 @@ int dict_attr_alias_add(fr_dict_attr_t const *parent, char const *alias, fr_dict
 	case FR_TYPE_TLV:
 	case FR_TYPE_VENDOR:
 	case FR_TYPE_VSA:
+	case FR_TYPE_GROUP:
 		break;
 
 	default:
@@ -5313,7 +5316,7 @@ fr_dict_t const	*fr_dict_proto_dict(fr_dict_t const *dict)
 	return dict;
 }
 
-int fr_dict_attr_set_group(fr_dict_attr_t **da_p)
+int fr_dict_attr_set_group(fr_dict_attr_t **da_p, fr_dict_attr_t const *ref)
 {
 	if ((*da_p)->type == FR_TYPE_GROUP) {
 		fr_assert(fr_dict_attr_ext(*da_p, FR_DICT_ATTR_EXT_REF) != NULL);
@@ -5321,12 +5324,10 @@ int fr_dict_attr_set_group(fr_dict_attr_t **da_p)
 	}
 
 	(*da_p)->type = FR_TYPE_GROUP;
+	(*da_p)->flags.type_size = 0;
+	(*da_p)->flags.length = 0;
 
 	fr_assert(fr_dict_attr_ext(*da_p, FR_DICT_ATTR_EXT_REF) == NULL);
 
-	if (!dict_attr_ext_alloc(da_p, FR_DICT_ATTR_EXT_REF)) {
-		return -1;
-	}
-
-	return 0;
+	return dict_attr_ref_aset(da_p, ref, FR_DICT_ATTR_REF_ALIAS);
 }

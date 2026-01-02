@@ -225,7 +225,7 @@ static request_t *request_from_file(TALLOC_CTX *ctx, FILE *fp, fr_client_t *clie
 	/*
 	 *	Read packet from fp
 	 */
-	if (fr_pair_list_afrom_file(request->request_ctx, dict_protocol, &request->request_pairs, fp, &filedone) < 0) {
+	if (fr_pair_list_afrom_file(request->request_ctx, dict_protocol, &request->request_pairs, fp, &filedone, true) < 0) {
 		goto error;
 	}
 
@@ -629,7 +629,7 @@ static void cancel_request(UNUSED fr_timer_list_t *tl, UNUSED fr_time_t when, vo
 	request->rcode = RLM_MODULE_TIMEOUT;
 }
 
-fr_time_delta_t time_offset = fr_time_delta_wrap(0);
+static fr_time_delta_t time_offset = fr_time_delta_wrap(0);
 
 /** Sythentic time source for tests
  *
@@ -837,11 +837,13 @@ int main(int argc, char *argv[])
 				break;
 
 			case 'S': /* Migration support */
+#if 0
 				if (main_config_parse_option(optarg) < 0) {
 					fprintf(stderr, "%s: Unknown configuration option '%s'\n",
 						config->name, optarg);
 					fr_exit_now(EXIT_FAILURE);
 				}
+#endif
 				break;
 
 			case 'X':
@@ -1124,7 +1126,7 @@ int main(int argc, char *argv[])
 			}
 		}
 
-		if (fr_pair_list_afrom_file(request->request_ctx, dict_protocol, &filter_vps, fp, &filedone) < 0) {
+		if (fr_pair_list_afrom_file(request->request_ctx, dict_protocol, &filter_vps, fp, &filedone, true) < 0) {
 			fr_perror("Failed reading attributes from %s", filter_file);
 			EXIT_WITH_FAILURE;
 		}

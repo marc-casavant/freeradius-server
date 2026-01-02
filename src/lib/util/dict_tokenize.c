@@ -551,6 +551,28 @@ static int dict_flag_enum(fr_dict_attr_t **da_p, char const *value, UNUSED fr_di
 	return 0;
 }
 
+/** "flat"
+ *
+ *  We have to parse the flat flag for tests, but only the various
+ *  protocol libraries can set it for protocol-specific attributes.
+ */
+static int dict_flag_flat(fr_dict_attr_t **da_p, UNUSED char const *value, UNUSED fr_dict_flag_parser_rule_t const *rule)
+{
+	if ((*da_p)->type != FR_TYPE_GROUP) {
+		fr_strerror_const("'flat' flag can only be used for data type 'group'");
+		return -1;
+	}
+
+	if (!(*da_p)->flags.internal) {
+		fr_strerror_const("'flat' flag can only be used for 'internal' attributes");
+		return -1;
+	}
+
+	(*da_p)->flags.allow_flat = true;
+
+	return 0;
+}
+
 FLAG_FUNC(internal)
 
 static int dict_flag_key(fr_dict_attr_t **da_p, char const *value, UNUSED fr_dict_flag_parser_rule_t const *rule)
@@ -815,6 +837,7 @@ static int CC_HINT(nonnull) dict_process_flag_field(dict_tokenize_ctx_t *dctx, c
 		{ L("clone"),		{ .func = dict_flag_clone, .needs_value = true } },
 		{ L("counter"), 	{ .func = dict_flag_counter } },
 		{ L("enum"),		{ .func = dict_flag_enum, .needs_value = true } },
+		{ L("flat"),		{ .func = dict_flag_flat } },
 		{ L("internal"),	{ .func = dict_flag_internal } },
 		{ L("key"), 		{ .func = dict_flag_key } },
 		{ L("length"), 		{ .func = dict_flag_length, .needs_value = true } },
@@ -1412,7 +1435,7 @@ static int dict_read_process_alias(dict_tokenize_ctx_t *dctx, char **argv, int a
 	}
 
 	/*
-	 *	Internally we can add aliases to STRUCTs.  But the poor user can't.
+	 *	Internally we can add aliases to STRUCTs and GROUPs.  But the poor user can't.
 	 *
 	 *	This limitation is mainly so that we can differentiate automatically added aliases (which
 	 *	point to unions), from ones added by users.  If we make dict_attr_acopy_aliases() a little

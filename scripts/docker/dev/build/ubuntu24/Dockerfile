@@ -12,7 +12,7 @@ FROM ${from} AS build
 ARG DEBIAN_FRONTEND=noninteractive
 
 #
-#  Install add-apt-repository
+#  Install build dependencies
 #
 RUN apt-get update && \
     apt-get install -y software-properties-common gnupg2 procps && \
@@ -39,7 +39,9 @@ RUN apt-get update && \
     apt-get install -y --no-install-recommends libreadline-dev libncurses-dev && \
     rm -rf /var/lib/apt/lists/*
 
-# ---- Build and install libkqueue (runtime + dev) ----
+#
+#  Build and install libkqueue > 2.6.3 from source
+#
 COPY scripts/docker/dev/build/ubuntu24/patch-libkqueue-soname-0.cmake /work/patch-libkqueue-soname-0.cmake
 COPY scripts/docker/dev/build/ubuntu24/build_libkqueue_deb.sh /work/build_libkqueue_deb.sh
 RUN chmod +x /work/build_libkqueue_deb.sh && \
@@ -51,7 +53,6 @@ RUN chmod +x /work/build_libkqueue_deb.sh && \
 
 #
 #  PLACEHOLDER FOR DOCUMENTATION BUILD DEPENDENCIES
-#  Documentation build dependencies
 #
 
 #  - doxygen & JSON.pm

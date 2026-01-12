@@ -274,14 +274,20 @@ static xlat_action_t xlat_test(UNUSED TALLOC_CTX *ctx, UNUSED fr_dcursor_t *out,
 	return XLAT_ACTION_DONE;
 }
 
-static char		proto_name_prev[128];
-static dl_t		*dl;
+static char		proto_name_prev[128] = {};
+static dl_t		*dl = NULL;
 static dl_loader_t	*dl_loader = NULL;
 
 static fr_event_list_t	*el = NULL;
 
+static bool		allow_purify = false;
+
 static char const	*write_filename = NULL;
 static FILE		*write_fp = NULL;
+
+static char const		*receipt_file = NULL;
+static char const		*receipt_dir = NULL;
+static char const      		*fail_file = "";
 
 size_t process_line(command_result_t *result, command_file_ctx_t *cc, char *data, size_t data_used, char *in, size_t inlen);
 static int process_file(bool *exit_now, TALLOC_CTX *ctx,
@@ -472,6 +478,7 @@ static inline CC_HINT(nonnull) int dump_fuzzer_data(int fd_dir, char const *text
 	}
 
 	if (flock(file_fd, LOCK_EX) < 0) {
+		close(file_fd);
 		fr_strerror_printf("Failed locking corpus seed file \"%s\": %s",
 				   digest_str, fr_syserror(errno));
 		return -1;
@@ -486,12 +493,14 @@ static inline CC_HINT(nonnull) int dump_fuzzer_data(int fd_dir, char const *text
 					   digest_str, fr_syserror(errno));
 			(void)flock(file_fd, LOCK_UN);
 			unlinkat(fd_dir, digest_str, 0);
+			close(file_fd);
 			return -1;
 		}
 		data_len -= ret;
 		data += ret;
 	}
 	(void)flock(file_fd, LOCK_UN);
+	close(file_fd);
 
 	return 0;
 }
@@ -930,6 +939,7 @@ static ssize_t encode_rfc(char *buffer, uint8_t *output, size_t outlen)
 
 static void unload_proto_library(void)
 {
+	proto_name_prev[0] = '\0';
 	TALLOC_FREE(dl);
 }
 
@@ -956,6 +966,7 @@ static ssize_t load_proto_library(char const *proto_name)
 		strlcpy(proto_name_prev, proto_name, sizeof(proto_name_prev));
 	}
 
+	fr_assert(dl != NULL);
 	return strlen(proto_name);
 }
 
@@ -2510,6 +2521,14 @@ static size_t command_load_dictionary(command_result_t *result, command_file_ctx
 		dir = cc->path;
 	}
 
+	/*
+	 *	When we're reading multiple files at the same time, they might all have a 'load-dictionary foo'
+	 *	command.  In which case we don't complain.
+	 */
+	if (fr_dict_filename_loaded(cc->tmpl_rules.attr.dict_def, dir, name)) {
+		RETURN_OK(0);
+	}
+
 	ret = fr_dict_read(UNCONST(fr_dict_t *, cc->tmpl_rules.attr.dict_def), dir, name);
 	talloc_free(tmp);
 	if (ret < 0) RETURN_COMMAND_ERROR();
@@ -3118,6 +3137,11 @@ static size_t command_xlat_normalise(command_result_t *result, command_file_ctx_
 	size_t			input_len = strlen(in), escaped_len;
 	fr_sbuff_parse_rules_t	p_rules = { .escapes = &fr_value_unescape_double };
 
+	if (allow_purify) {
+		fr_strerror_printf_push_head("ERROR cannot run 'xlat' when running with command-line argument '-p'");
+		RETURN_OK_WITH_ERROR();
+	}
+
 	slen = xlat_tokenize(cc->tmp_ctx, &head, &FR_SBUFF_IN(in, input_len), &p_rules,
 			     &(tmpl_rules_t) {
 				     .attr = {
@@ -3321,6 +3345,11 @@ static size_t command_xlat_argv(command_result_t *result, command_file_ctx_t *cc
 	size_t		len;
 	size_t		input_len = strlen(in);
 	char		buff[1024];
+
+	if (allow_purify) {
+		fr_strerror_printf_push_head("ERROR cannot run 'xlat_argv' when running with command-line argument '-p'");
+		RETURN_OK_WITH_ERROR();
+	}
 
 	slen = xlat_tokenize_argv(cc->tmp_ctx, &head, &FR_SBUFF_IN(in, input_len),
 				  NULL, NULL,
@@ -3849,6 +3878,8 @@ static int process_file(bool *exit_now, TALLOC_CTX *ctx, command_config_t const 
 	if (strcmp(filename, "-") == 0) {
 		fp = stdin;
 		filename = "<stdin>";
+		fr_assert(!root_dir);
+
 	} else {
 		if (root_dir && *root_dir) {
 			snprintf(path, sizeof(path), "%s/%s", root_dir, filename);
@@ -4125,6 +4156,149 @@ static int line_ranges_parse(TALLOC_CTX *ctx, fr_dlist_head_t *out, fr_sbuff_t *
 	return 0;
 }
 
+static int process_path(bool *exit_now, TALLOC_CTX *ctx, command_config_t const *config, const char *path)
+{
+	char			*p, *dir = NULL, *file;
+	int			ret = EXIT_SUCCESS;
+	fr_sbuff_t		in = FR_SBUFF_IN(path, strlen(path));
+	fr_sbuff_term_t		dir_sep = FR_SBUFF_TERMS(
+		L("/"),
+		L(":")
+		);
+	fr_sbuff_marker_t	file_start, file_end, dir_end;
+	fr_dlist_head_t		lines;
+
+	fr_sbuff_marker(&file_start, &in);
+	fr_sbuff_marker(&file_end, &in);
+	fr_sbuff_marker(&dir_end, &in);
+	fr_sbuff_set(&file_end, fr_sbuff_end(&in));
+
+	fr_dlist_init(&lines, command_line_range_t, entry);
+
+	while (fr_sbuff_extend(&in)) {
+		fr_sbuff_adv_until(&in, SIZE_MAX, &dir_sep, '\0');
+
+		fr_sbuff_switch(&in, '\0') {
+			case '/':
+				fr_sbuff_set(&dir_end, &in);
+				fr_sbuff_advance(&in, 1);
+				fr_sbuff_set(&file_start, &in);
+				break;
+
+				case ':':
+					fr_sbuff_set(&file_end, &in);
+					fr_sbuff_advance(&in, 1);
+					if (line_ranges_parse(ctx, &lines, &in) < 0) {
+						return EXIT_FAILURE;
+					}
+					break;
+
+					default:
+						fr_sbuff_set(&file_end, &in);
+						break;
+		}
+	}
+
+	file = talloc_bstrndup(ctx,
+			       fr_sbuff_current(&file_start), fr_sbuff_diff(&file_end, &file_start));
+	if (fr_sbuff_used(&dir_end)) dir = talloc_bstrndup(ctx,
+							   fr_sbuff_start(&in),
+							   fr_sbuff_used(&dir_end));
+
+	/*
+	 *	Do things so that GNU Make does less work.
+	 */
+	if ((receipt_dir || receipt_file) &&
+	    (strncmp(path, "src/tests/unit/", 15) == 0)) {
+		p = strchr(path + 15, '/');
+		if (!p) {
+			printf("UNIT-TEST %s\n", path + 15);
+		} else {
+			char *q = strchr(p + 1, '/');
+
+			*p = '\0';
+
+			if (!q) {
+				printf("UNIT-TEST %s - %s\n", path + 15, p + 1);
+			} else {
+				*q = '\0';
+
+				printf("UNIT-TEST %s - %s\n", p + 1, q + 1);
+				*q = '/';
+			}
+
+			*p = '/';
+		}
+	}
+
+	/*
+	 *	Rewrite this file if requested.
+	 */
+	if (write_filename) {
+		write_fp = fopen(write_filename, "w");
+		if (!write_fp) {
+			ERROR("Failed opening %s: %s", write_filename, strerror(errno));
+			return EXIT_FAILURE;
+		}
+	}
+
+	ret = process_file(exit_now, ctx, config, dir, file, &lines);
+
+	if ((ret == EXIT_SUCCESS) && receipt_dir && dir) {
+		char *touch_file, *subdir;
+
+		if (strncmp(dir, "src/", 4) == 0) {
+			subdir = dir + 4;
+		} else {
+			subdir = dir;
+		}
+
+		touch_file = talloc_asprintf(ctx, "build/%s/%s", subdir, file);
+		fr_assert(touch_file);
+
+		p = strchr(touch_file, '/');
+		fr_assert(p);
+
+		if (fr_mkdir(NULL, touch_file, (size_t) (p - touch_file), S_IRWXU, NULL, NULL) < 0) {
+			fr_perror("unit_test_attribute - failed to make directory %.*s - ",
+				  (int) (p - touch_file), touch_file);
+fail:
+			if (write_fp) fclose(write_fp);
+			return EXIT_FAILURE;
+		}
+
+		if (fr_touch(NULL, touch_file, 0644, true, 0755) <= 0) {
+			fr_perror("unit_test_attribute - failed to create receipt file %s - ",
+				  touch_file);
+			goto fail;
+		}
+
+		talloc_free(touch_file);
+	}
+
+	talloc_free(dir);
+	talloc_free(file);
+	fr_dlist_talloc_free(&lines);
+
+	if (ret != EXIT_SUCCESS) {
+		if (write_fp) {
+			fclose(write_fp);
+			write_fp = NULL;
+		}
+		fail_file = path;
+	}
+
+	if (write_fp) {
+		fclose(write_fp);
+		if (rename(write_filename, path) < 0) {
+			ERROR("Failed renaming %s: %s", write_filename, strerror(errno));
+			return EXIT_FAILURE;
+		}
+	}
+
+	return ret;
+}
+
 /**
  *
  * @hidecallgraph
@@ -4132,7 +4306,6 @@ static int line_ranges_parse(TALLOC_CTX *ctx, fr_dlist_head_t *out, fr_sbuff_t *
 int main(int argc, char *argv[])
 {
 	int			c;
-	char const		*receipt_file = NULL;
 	CONF_SECTION		*cs;
 	int			ret = EXIT_SUCCESS;
 	TALLOC_CTX		*autofree;
@@ -4148,8 +4321,9 @@ int main(int argc, char *argv[])
 	bool			do_features = false;
 	bool			do_commands = false;
 	bool			do_usage = false;
-	bool			allow_purify = false;
 	xlat_t			*xlat;
+	char			*p;
+	char const		*error_str = NULL, *fail_str = NULL;
 
 	/*
 	 *	Must be called first, so the handler is called last
@@ -4223,7 +4397,18 @@ int main(int argc, char *argv[])
 			break;
 
 		case 'r':
-			receipt_file = optarg;
+			p = strrchr(optarg, '/');
+			if (!p || p[1]) {
+				receipt_file = optarg;
+
+				if ((fr_unlink(receipt_file) < 0)) {
+					fr_perror("unit_test_attribute");
+					EXIT_WITH_FAILURE;
+				}
+
+			} else {
+				receipt_dir = optarg;
+			}
 			break;
 
 		case 'p':
@@ -4252,11 +4437,6 @@ int main(int argc, char *argv[])
 	if (do_usage || do_features || do_commands) {
 		ret = EXIT_SUCCESS;
 		goto cleanup;
-	}
-
-	if (receipt_file && (fr_unlink(receipt_file) < 0)) {
-		fr_perror("unit_test_attribute");
-		EXIT_WITH_FAILURE;
 	}
 
 	/*
@@ -4357,97 +4537,60 @@ int main(int argc, char *argv[])
 	fr_hostname_lookups = fr_reverse_lookups = false;
 
 	/*
-	 *	Read tests from stdin
+	 *	Read test commands from stdin
 	 */
 	if (argc < 2) {
 		if (write_filename) {
-			ERROR("Can't use '-w' with stdin");
+			ERROR("Can only use '-w' with input files");
 			EXIT_WITH_FAILURE;
 		}
 
-		ret = process_file(&exit_now, autofree, &config, name, "-", NULL);
+		ret = process_file(&exit_now, autofree, &config, NULL, "-", NULL);
 
-	/*
-	 *	...or process each file in turn.
-	 */
+	} else if ((argc == 2) && (strcmp(argv[1], "-") == 0)) {
+			char buffer[1024];
+
+			/*
+			 *	Read the list of filenames from stdin.
+			 */
+			while (fgets(buffer, sizeof(buffer) - 1, stdin) != NULL) {
+				buffer[sizeof(buffer) - 1] = '\0';
+
+				p = buffer;
+				while (isspace((unsigned int) *p)) p++;
+
+				if (!*p || (*p == '#')) continue;
+
+				name = p;
+
+				/*
+				 *	Smash CR/LF.
+				 *
+				 *	Note that we don't care about truncated filenames.  The code below
+				 *	will complain that it can't open the file.
+				 */
+				while (*p) {
+					if (*p < ' ') {
+						*p = '\0';
+						break;
+					}
+
+					p++;
+				}
+
+				ret = process_path(&exit_now, autofree, &config, name);
+				if ((ret != EXIT_SUCCESS) || exit_now) break;
+			}
+
 	} else {
 		int i;
 
-		if (write_filename) {
-			if (argc != 2) { /* program name and file to write */
-				ERROR("Can't use '-w' with multiple filenames");
-				EXIT_WITH_FAILURE;
-			}
-
-			write_fp = fopen(write_filename, "w");
-			if (!write_fp) {
-				ERROR("Failed opening %s: %s", write_filename, strerror(errno));
-				EXIT_WITH_FAILURE;
-			}
-		}
-
 		/*
-		 *	Loop over all input files.
+		 *	Read test commands from a list of files in argv[].
 		 */
 		for (i = 1; i < argc; i++) {
-			char			*dir = NULL, *file;
-			fr_sbuff_t		in = FR_SBUFF_IN(argv[i], strlen(argv[i]));
-			fr_sbuff_term_t		dir_sep = FR_SBUFF_TERMS(
-							L("/"),
-							L(":")
-						);
-			fr_sbuff_marker_t	file_start, file_end, dir_end;
-			fr_dlist_head_t		lines;
-
-			fr_sbuff_marker(&file_start, &in);
-			fr_sbuff_marker(&file_end, &in);
-			fr_sbuff_marker(&dir_end, &in);
-			fr_sbuff_set(&file_end, fr_sbuff_end(&in));
-
-			fr_dlist_init(&lines, command_line_range_t, entry);
-
-			while (fr_sbuff_extend(&in)) {
-				fr_sbuff_adv_until(&in, SIZE_MAX, &dir_sep, '\0');
-
-				fr_sbuff_switch(&in, '\0') {
-				case '/':
-					fr_sbuff_set(&dir_end, &in);
-					fr_sbuff_advance(&in, 1);
-					fr_sbuff_set(&file_start, &in);
-					break;
-
-				case ':':
-					fr_sbuff_set(&file_end, &in);
-					fr_sbuff_advance(&in, 1);
-					if (line_ranges_parse(autofree, &lines, &in) < 0) EXIT_WITH_FAILURE;
-					break;
-
-				default:
-					fr_sbuff_set(&file_end, &in);
-					break;
-				}
-			}
-
-			file = talloc_bstrndup(autofree,
-					       fr_sbuff_current(&file_start), fr_sbuff_diff(&file_end, &file_start));
-			if (fr_sbuff_used(&dir_end)) dir = talloc_bstrndup(autofree,
-									   fr_sbuff_start(&in),
-									   fr_sbuff_used(&dir_end));
-
-			ret = process_file(&exit_now, autofree, &config, dir, file, &lines);
-			talloc_free(dir);
-			talloc_free(file);
-			fr_dlist_talloc_free(&lines);
-
-			if ((ret != 0) || exit_now) break;
-		}
-
-		if (write_fp) {
-			fclose(write_fp);
-			if (rename(write_filename, argv[1]) < 0) {
-				ERROR("Failed renaming %s: %s", write_filename, strerror(errno));
-				EXIT_WITH_FAILURE;
-			}
+			ret = process_path(&exit_now, autofree, &config, argv[i]);
+			if ((ret != EXIT_SUCCESS) || exit_now) break;
 		}
 	}
 
@@ -4456,6 +4599,15 @@ int main(int argc, char *argv[])
 	 *	memory, so we get clean talloc reports.
 	 */
 cleanup:
+#undef EXIT_WITH_FAILURE
+#define EXIT_WITH_FAILURE \
+do { \
+	ret = EXIT_FAILURE; \
+	error_str = fr_strerror(); \
+	if (error_str) error_str = talloc_strdup(NULL, error_str); \
+	goto fail; \
+} while (0)
+
 	/*
 	 *	Ensure all thread local memory is cleaned up
 	 *	at the appropriate time.  This emulates what's
@@ -4473,16 +4625,17 @@ cleanup:
 	 *	returns -1 on failure.
 	 */
 	if (dl_loader && (talloc_free(dl_loader) < 0)) {
-		fr_perror("unit_test_attribute - dl_loader - ");	/* Print free order issues */
+		fail_str = "cleaning up dynamically loaded libraries";
 		EXIT_WITH_FAILURE;
 	}
+
 	if (fr_dict_free(&config.dict, __FILE__) < 0) {
-		fr_perror("unit_test_attribute");
+		fail_str = "cleaning up dictionaries";
 		EXIT_WITH_FAILURE;
 	}
 
 	if (receipt_file && (ret == EXIT_SUCCESS) && (fr_touch(NULL, receipt_file, 0644, true, 0755) <= 0)) {
-		fr_perror("unit_test_attribute");
+		fail_str = "creating receipt file";
 		EXIT_WITH_FAILURE;
 	}
 
@@ -4491,9 +4644,24 @@ cleanup:
 	 *	to make errors less confusing.
 	 */
 	if (talloc_free(autofree) < 0) {
-		fr_perror("unit_test_attribute");
+		fail_str = "cleaning up all memory";
 		EXIT_WITH_FAILURE;
 	}
+
+	if (ret != EXIT_SUCCESS) {
+	fail:
+		if (!fail_str) fail_str = "in an input file";
+		if (!error_str) error_str = "";
+
+		fprintf(stderr, "unit_test_attribute failed %s - %s\n", fail_str, error_str);
+
+		/*
+		 *	Print any command needed to run the test from the command line.
+		 */
+		p = getenv("UNIT_TEST_ATTRIBUTE");
+		if (p) printf("%s %s\n", p, fail_file);
+	}
+
 
 	/*
 	 *	Ensure our atexit handlers run before any other

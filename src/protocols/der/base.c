@@ -334,7 +334,7 @@ static int dict_flag_set_oid_and_value(fr_dict_attr_t **da_p, fr_der_attr_flags_
 
 	if (fr_dict_attr_set_group(da_p, attr_oid_tree) < 0) return -1;
 
-	(*da_p)->flags.allow_flat = !flags->is_extensions;
+	(*da_p)->flags.allow_flat = true;
 	return 0;
 }
 
@@ -1026,6 +1026,21 @@ static bool attr_valid(fr_dict_attr_t *da)
 					   da->parent->name, fr_der_tag_to_str(parent->set_of),
 					   fr_der_tag_to_str(flags->der_type));
 			return false;
+		}
+	}
+
+	if ((da->type == FR_TYPE_GROUP) && !da->flags.allow_flat) {
+		if ((da->parent == attr_oid_tree) || da->parent->flags.allow_flat) {
+			da->flags.allow_flat = true;
+		} else {			
+			fr_dict_attr_t const *oid;
+
+			for (oid = da->parent; !oid->flags.is_root; oid = oid->parent) {
+				if (oid == attr_oid_tree) {
+					da->flags.allow_flat = true;
+					break;
+				}
+			}
 		}
 	}
 

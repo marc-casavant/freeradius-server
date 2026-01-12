@@ -494,38 +494,6 @@ static inline CC_HINT(always_inline) int dict_attr_vendor_set(fr_dict_attr_t **d
 	return 0;
 }
 
-/** Initialise an attribute's da stack from its parent
- *
- * @note This function can only be used _before_ the attribute is inserted into the dictionary.
- *
- * @param[in] da_p		to populate the da_stack for.
- */
-static inline CC_HINT(always_inline) int dict_attr_da_stack_set(fr_dict_attr_t **da_p)
-{
-	fr_dict_attr_ext_da_stack_t	*ext, *p_ext;
-	fr_dict_attr_t			*da = *da_p;
-	fr_dict_attr_t const		*parent = da->parent;
-
-	if (!parent) return 1;
-	if (da->depth > FR_DICT_DA_STACK_CACHE_MAX) return 1;
-	if (fr_dict_attr_ext(da, FR_DICT_ATTR_EXT_DA_STACK)) return 1;
-
-	p_ext = fr_dict_attr_ext(parent, FR_DICT_ATTR_EXT_DA_STACK);
-	if (!p_ext) return 1;
-
-	ext = dict_attr_ext_alloc_size(da_p, FR_DICT_ATTR_EXT_DA_STACK, sizeof(ext->da_stack[0]) * (da->depth + 1));
-	if (unlikely(!ext)) return -1;
-
-	memcpy(ext->da_stack, p_ext->da_stack, sizeof(ext->da_stack[0]) * parent->depth);
-
-	/*
-	 *	Always set the last stack entry to ourselves.
-	 */
-	ext->da_stack[da->depth] = da;
-
-	return 0;
-}
-
 /** Initialise a per-attribute enumeration table
  *
  * @note This function can only be used _before_ the attribute is inserted into the dictionary.
@@ -732,12 +700,6 @@ int dict_attr_parent_init(fr_dict_attr_t **da_p, fr_dict_attr_t const *parent)
 	} else {
 		ext = dict_attr_ext_copy(da_p, parent, FR_DICT_ATTR_EXT_VENDOR); /* Noop if no vendor extension */
 	}
-
-	/*
-	 *	Cache the da_stack so we don't need
-	 *	to generate it at runtime.
-	 */
-	dict_attr_da_stack_set(da_p);
 
 	da = *da_p;
 
@@ -4439,6 +4401,7 @@ int fr_dict_attr_autoload(fr_dict_attr_autoload_t const *to_load)
 {
 	fr_dict_attr_t const		*da;
 	fr_dict_attr_autoload_t const	*p = to_load;
+	fr_dict_attr_t const		*root = NULL;
 
 	for (p = to_load; p->out; p++) {
 		if (!p->dict) {
@@ -4454,11 +4417,26 @@ int fr_dict_attr_autoload(fr_dict_attr_autoload_t const *to_load)
 			return -1;
 		}
 
-		da = fr_dict_attr_by_oid(NULL, fr_dict_root(*p->dict), p->name);
-		if (!da) {
-			fr_strerror_printf("Autoloader attribute \"%s\" not found in \"%s\" dictionary", p->name,
-					   *p->dict ? (*p->dict)->root->name : "internal");
-			return -1;
+		if (!root || (root->dict != *p->dict) || (p->name[0] != '.')) {
+			root = (*p->dict)->root;
+		}
+
+		if (p->name[0] == '.') {
+			da = fr_dict_attr_by_oid(NULL, root, p->name + 1);
+			if (!da) {
+				fr_strerror_printf("Autoloader attribute \"%s\" not found in \"%s\" dictionary under attribute %s", p->name,
+						   *p->dict ? (*p->dict)->root->name : "internal", root->name);
+				return -1;
+			}
+		} else {
+			da = fr_dict_attr_by_oid(NULL, fr_dict_root(*p->dict), p->name);
+			if (!da) {
+				fr_strerror_printf("Autoloader attribute \"%s\" not found in \"%s\" dictionary", p->name,
+						   *p->dict ? (*p->dict)->root->name : "internal");
+				return -1;
+			}
+
+			if (fr_type_is_structural(da->type)) root = da;
 		}
 
 		if (da->type != p->type) {

@@ -1902,14 +1902,14 @@ static int dict_read_process_begin_vendor(dict_tokenize_ctx_t *dctx, char **argv
 		fr_dict_attr_t const *da;
 
 		if (strncmp(argv[1], "parent=", 7) != 0) {
-			fr_strerror_printf("BEGIN-VENDOR invalid argument (%s)", argv[1]);
+			fr_strerror_const("BEGIN-VENDOR invalid argument - expected 'parent='");
 			return -1;
 		}
 
 		p = argv[1] + 7;
 		da = fr_dict_attr_by_oid(NULL, CURRENT_FRAME(dctx)->da, p);
 		if (!da) {
-			fr_strerror_printf("BEGIN-VENDOR invalid argument (%s)", argv[1]);
+			fr_strerror_printf("BEGIN-VENDOR Failed to find attribute '%s'", p);
 			return -1;
 		}
 
@@ -3066,11 +3066,10 @@ static inline int dict_filename_add(char **filename_out, fr_dict_t *dict, char c
 	return 0;
 }
 
-#ifndef NDEBUG
 /** See if we have already loaded the file,
  *
  */
-static inline bool dict_filename_loaded(fr_dict_t *dict, char const *filename,
+static inline bool dict_filename_loaded(fr_dict_t const *dict, char const *filename,
 					char const *src_file, int src_line)
 {
 	fr_dict_filename_t *file;
@@ -3088,7 +3087,17 @@ static inline bool dict_filename_loaded(fr_dict_t *dict, char const *filename,
 
 	return false;
 }
-#endif
+
+bool fr_dict_filename_loaded(fr_dict_t const *dict, char const *dir, char const *filename)
+{
+	char buffer[PATH_MAX];
+
+	if (!dict) return false;
+
+	snprintf(buffer, sizeof(buffer), "%s/%s", dir, filename);
+
+	return dict_filename_loaded(dict, buffer, NULL, 0);
+}
 
 /** Process an inline BEGIN PROTOCOL block
  *
@@ -3237,12 +3246,11 @@ static int _dict_from_file(dict_tokenize_ctx_t *dctx,
 	/*
 	 *	See if we have already loaded this filename.  If so, suppress it.
 	 */
-#ifndef NDEBUG
 	if (unlikely(dict_filename_loaded(dctx->dict, filename, src_file, src_line))) {
-		fr_strerror_printf("ERROR - we have a recursive $INCLUDE or load of dictionary %s", filename);
+		fr_strerror_printf("ERROR - we have a recursive $INCLUDE or load of file %s", filename);
 		return -1;
 	}
-#endif
+
 
 	if ((fp = fopen(filename, "r")) == NULL) {
 		if (!src_file) {

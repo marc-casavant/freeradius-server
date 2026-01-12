@@ -49,7 +49,7 @@ fr_dict_autoload_t libfreeradius_radius_dict[] = {
 	{ .out = &dict_freeradius, .proto = "freeradius" },
 	{ .out = &dict_radius, .proto = "radius" },
 
-	DICT_AUTOLOAD_TERMINATOR	
+	DICT_AUTOLOAD_TERMINATOR
 };
 
 fr_dict_attr_t const *attr_packet_type;
@@ -173,7 +173,7 @@ char const *fr_radius_packet_name[FR_RADIUS_CODE_MAX] = {
 /** If we get a reply, the request must come from one of a small
  * number of packet types.
  */
-static const fr_radius_packet_code_t allowed_replies[FR_RADIUS_CODE_MAX] = {
+const fr_radius_packet_code_t allowed_replies[FR_RADIUS_CODE_MAX] = {
 	[FR_RADIUS_CODE_ACCESS_ACCEPT]		= FR_RADIUS_CODE_ACCESS_REQUEST,
 	[FR_RADIUS_CODE_ACCESS_CHALLENGE]	= FR_RADIUS_CODE_ACCESS_REQUEST,
 	[FR_RADIUS_CODE_ACCESS_REJECT]		= FR_RADIUS_CODE_ACCESS_REQUEST,
@@ -954,35 +954,12 @@ void *fr_radius_next_encodable(fr_dcursor_t *cursor, void *current, void *uctx)
 }
 
 
-static const bool disallow_tunnel_passwords[FR_RADIUS_CODE_MAX] = {
-	[ FR_RADIUS_CODE_ACCESS_REQUEST ] = true,
-	// can be in Access-Accept
-	[ FR_RADIUS_CODE_ACCESS_REJECT ] = true,
-	[ FR_RADIUS_CODE_ACCESS_CHALLENGE ] = true,
-
-	[ FR_RADIUS_CODE_ACCOUNTING_REQUEST ] = true,
-	[ FR_RADIUS_CODE_ACCOUNTING_RESPONSE ] = true,
-
-	[ FR_RADIUS_CODE_STATUS_SERVER ] = true,
-
-	[ FR_RADIUS_CODE_COA_ACK ] = true,
-	[ FR_RADIUS_CODE_COA_NAK ] = true,
-
-	[ FR_RADIUS_CODE_DISCONNECT_REQUEST ] = true,
-	[ FR_RADIUS_CODE_DISCONNECT_ACK ] = true,
-	[ FR_RADIUS_CODE_DISCONNECT_NAK ] = true,
-
-	[ FR_RADIUS_CODE_PROTOCOL_ERROR ] = true,
-};
-
 ssize_t fr_radius_encode(fr_dbuff_t *dbuff, fr_pair_list_t *vps, fr_radius_encode_ctx_t *packet_ctx)
 {
 	ssize_t			slen;
 	fr_pair_t const		*vp;
 	fr_dcursor_t		cursor;
 	fr_dbuff_t		work_dbuff, length_dbuff;
-
-	packet_ctx->disallow_tunnel_passwords = disallow_tunnel_passwords[packet_ctx->code];
 
 	/*
 	 *	The RADIUS header can't do more than 64K of data.
@@ -1056,10 +1033,22 @@ ssize_t fr_radius_encode(fr_dbuff_t *dbuff, fr_pair_list_t *vps, fr_radius_encod
 	 *	header for insecure transport protocols.
 	 */
 	if (!packet_ctx->common->secure_transport) switch (packet_ctx->code) {
-	case FR_RADIUS_CODE_ACCESS_REQUEST:
 	case FR_RADIUS_CODE_ACCESS_ACCEPT:
 	case FR_RADIUS_CODE_ACCESS_REJECT:
 	case FR_RADIUS_CODE_ACCESS_CHALLENGE:
+#ifdef NAS_VIOLATES_RFC
+		/*
+		 *	Allow ridiculous behavior for vendors who violate the RFCs.
+		 *
+		 *	But only if there's no EAP-Message in the packet.
+		 */
+		if (packet_ctx->allow_vulnerable_clients && !fr_pair_find_by_da(vps, NULL, attr_eap_message)) {
+			break;
+		}
+		FALL_THROUGH;
+#endif
+
+	case FR_RADIUS_CODE_ACCESS_REQUEST:
 	case FR_RADIUS_CODE_STATUS_SERVER:
 	case FR_RADIUS_CODE_PROTOCOL_ERROR:
 		FR_DBUFF_IN_BYTES_RETURN(&work_dbuff, FR_MESSAGE_AUTHENTICATOR, 0x12,

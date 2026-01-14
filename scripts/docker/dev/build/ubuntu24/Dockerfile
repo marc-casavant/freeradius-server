@@ -152,6 +152,9 @@ RUN ln -s /etc/freeradius /etc/raddb
 RUN cp /etc/raddb/radiusd.conf /etc/raddb/freeradius.conf
 RUN sed -i 's/^name = radiusd$/name = freeradius/' /etc/raddb/freeradius.conf
 
-EXPOSE 1812/udp 1813/udp
+# 1812/udp - RADIUS authentication port
+# 1813/udp - RADIUS accounting port
+# 1820/udp - RADIUS Status-Server port
+EXPOSE 1812/udp 1813/udp 1820/udp
 ENTRYPOINT ["/docker-entrypoint.sh"]
 CMD ["freeradius"]

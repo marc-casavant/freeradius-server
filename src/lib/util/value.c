@@ -59,9 +59,9 @@ RCSID("$Id$")
  *
  * There should never be an instance where these fail.
  */
-static_assert(SIZEOF_MEMBER(fr_value_box_t, vb_ip.addr.v4.s_addr) == 4,
+static_assert(SIZEOF_MEMBER(fr_value_box_t, vb_ipv4addr) == 4,
 	      "in_addr.s_addr has unexpected length");
-static_assert(SIZEOF_MEMBER(fr_value_box_t, vb_ip.addr.v6.s6_addr) == 16,
+static_assert(SIZEOF_MEMBER(fr_value_box_t, vb_ipv6addr) == 16,
 	      "in6_addr.s6_addr has unexpected length");
 static_assert(SIZEOF_MEMBER(fr_value_box_t, vb_ifid) == 8,
 	      "vb_ifid has unexpected length");
@@ -1027,8 +1027,8 @@ int fr_value_box_cmp_op(fr_token_t op, fr_value_box_t const *a, fr_value_box_t c
 			FALL_THROUGH;
 
 		case FR_TYPE_IPV4_PREFIX:	/* IPv4 and IPv4 Prefix */
-			return fr_value_box_cidr_cmp_op(op, 4, 32, (uint8_t const *) &a->vb_ip.addr.v4.s_addr,
-						     b->vb_ip.prefix, (uint8_t const *) &b->vb_ip.addr.v4.s_addr);
+			return fr_value_box_cidr_cmp_op(op, 4, 32, (uint8_t const *) &a->vb_ipv4addr,
+						     b->vb_ip.prefix, (uint8_t const *) &b->vb_ipv4addr);
 
 		default:
 		fail_cmp_v4:
@@ -1045,7 +1045,7 @@ int fr_value_box_cmp_op(fr_token_t op, fr_value_box_t const *a, fr_value_box_t c
 
 		case FR_TYPE_IPV4_ADDR:
 			return fr_value_box_cidr_cmp_op(op, 4, a->vb_ip.prefix,
-						     (uint8_t const *) &a->vb_ip.addr.v4.s_addr,
+						     (uint8_t const *) &a->vb_ipv4addr,
 						     32, (uint8_t const *) &b->vb_ip.addr.v4);
 
 		case FR_TYPE_COMBO_IP_PREFIX:
@@ -1054,8 +1054,8 @@ int fr_value_box_cmp_op(fr_token_t op, fr_value_box_t const *a, fr_value_box_t c
 
 		case FR_TYPE_IPV4_PREFIX:	/* IPv4 Prefix and IPv4 Prefix */
 			return fr_value_box_cidr_cmp_op(op, 4, a->vb_ip.prefix,
-						     (uint8_t const *) &a->vb_ip.addr.v4.s_addr,
-						     b->vb_ip.prefix, (uint8_t const *) &b->vb_ip.addr.v4.s_addr);
+						     (uint8_t const *) &a->vb_ipv4addr,
+						     b->vb_ip.prefix, (uint8_t const *) &b->vb_ipv4addr);
 
 		default:
 			fr_strerror_const("Cannot compare IPv4 with IPv6 address");
@@ -1611,8 +1611,8 @@ ssize_t fr_value_box_to_network(fr_dbuff_t *dbuff, fr_value_box_t const *value)
 	case FR_TYPE_IPV4_ADDR:
 	ipv4addr:
 		FR_DBUFF_IN_MEMCPY_RETURN(&work_dbuff,
-					  (uint8_t const *)&value->vb_ip.addr.v4.s_addr,
-					  sizeof(value->vb_ip.addr.v4.s_addr));
+					  (uint8_t const *)&value->vb_ipv4addr,
+					  sizeof(value->vb_ipv4addr));
 		break;
 	/*
 	 *	Needs special mangling
@@ -1621,21 +1621,21 @@ ssize_t fr_value_box_to_network(fr_dbuff_t *dbuff, fr_value_box_t const *value)
 	ipv4prefix:
 		FR_DBUFF_IN_RETURN(&work_dbuff, value->vb_ip.prefix);
 		FR_DBUFF_IN_MEMCPY_RETURN(&work_dbuff,
-					  (uint8_t const *)&value->vb_ip.addr.v4.s_addr,
-					  sizeof(value->vb_ip.addr.v4.s_addr));
+					  (uint8_t const *)&value->vb_ipv4addr,
+					  sizeof(value->vb_ipv4addr));
 		break;
 
 	case FR_TYPE_IPV6_ADDR:
 	ipv6addr:
 		if (value->vb_ip.scope_id > 0) FR_DBUFF_IN_RETURN(&work_dbuff, value->vb_ip.scope_id);
-		FR_DBUFF_IN_MEMCPY_RETURN(&work_dbuff, value->vb_ip.addr.v6.s6_addr, sizeof(value->vb_ip.addr.v6.s6_addr));
+		FR_DBUFF_IN_MEMCPY_RETURN(&work_dbuff, value->vb_ipv6addr, sizeof(value->vb_ipv6addr));
 		break;
 
 	case FR_TYPE_IPV6_PREFIX:
 	ipv6prefix:
 		if (value->vb_ip.scope_id > 0) FR_DBUFF_IN_RETURN(&work_dbuff, value->vb_ip.scope_id);
 		FR_DBUFF_IN_RETURN(&work_dbuff, value->vb_ip.prefix);
-		FR_DBUFF_IN_MEMCPY_RETURN(&work_dbuff, value->vb_ip.addr.v6.s6_addr, sizeof(value->vb_ip.addr.v6.s6_addr));
+		FR_DBUFF_IN_MEMCPY_RETURN(&work_dbuff, value->vb_ipv6addr, sizeof(value->vb_ipv6addr));
 		break;
 
 	case FR_TYPE_BOOL:
@@ -2421,6 +2421,77 @@ ssize_t fr_value_box_ipaddr_from_network(fr_value_box_t *dst, fr_type_t type, fr
 	return data_len;
 }
 
+/** Decode a #fr_value_box_t from a C type in memory
+ *
+ *  We ignore arrays
+ *
+ * @param[in] ctx	Where to allocate any talloc buffers required.
+ * @param[out] dst	value_box to write the result to.
+ * @param[in] type	to decode data to.
+ * @param[in] enumv	Aliases for values.
+ * @param[in] src	raw pointer to the (possibly unaligned) source
+ * @param[in] len	Length of data to decode.  For fixed length types we only
+ *			decode complete values.
+ * @return
+ *	- >= 0 The number of bytes consumed.
+ *	- <0 an error occured
+ */
+ssize_t	fr_value_box_from_memory(TALLOC_CTX *ctx,
+				 fr_value_box_t *dst, fr_type_t type, fr_dict_attr_t const *enumv,
+				 void const *src, size_t len)
+{
+	switch (type) {
+	case FR_TYPE_INTEGER_EXCEPT_BOOL:
+	case FR_TYPE_FLOAT32:
+	case FR_TYPE_FLOAT64:
+		if (len != fr_value_box_field_sizes[type]) {
+			fr_strerror_printf("Invalid size passed for type %s - expected %zu got %zu",
+					   fr_type_to_str(type), fr_value_box_field_sizes[type], len);
+				return -1;
+		}
+
+		fr_value_box_init(dst, type, enumv, false);
+		memcpy(&dst->datum, src, len);
+		break;
+
+	case FR_TYPE_IPV4_ADDR:
+		if (len != sizeof(struct in_addr)) {
+			fr_strerror_printf("Invalid size passed for type %s - expected %zu got %zu",
+					   fr_type_to_str(type), sizeof(struct in_addr), len);
+				return -1;
+		}
+
+		fr_value_box_init(dst, type, enumv, false);
+		memcpy(&dst->vb_ipv4addr, src, len);
+		break;
+
+	case FR_TYPE_IPV6_ADDR:
+		if (len != sizeof(struct in6_addr)) {
+			fr_strerror_printf("Invalid size passed for type %s - expected %zu got %zu",
+					   fr_type_to_str(type), sizeof(struct in6_addr), len);
+			return -1;
+		}
+
+		fr_value_box_init(dst, type, enumv, false);
+		memcpy(&dst->vb_ipv6addr, src, len);
+		break;
+
+	case FR_TYPE_STRING:
+		return fr_value_box_bstrndup(ctx, dst, enumv, src, len, false);
+
+	case FR_TYPE_OCTETS:
+		return fr_value_box_memdup(ctx, dst, enumv, src, len, false);
+
+	default:
+		fr_strerror_printf("Unsupported data type %s",
+				   fr_type_to_str(type));
+		return -1;
+	}
+
+	return len;
+}
+
+
 /** Get a key from a value box
  *
  * @param[in,out] out - set to a small buffer on input.  If the callback has more data
@@ -2637,8 +2708,8 @@ static inline int fr_value_box_cast_to_octets(TALLOC_CTX *ctx, fr_value_box_t *d
 	 */
 	case FR_TYPE_IPV4_ADDR:
 		return fr_value_box_memdup(ctx, dst, dst_enumv,
-					   (uint8_t const *)&src->vb_ip.addr.v4.s_addr,
-					   sizeof(src->vb_ip.addr.v4.s_addr), src->tainted);
+					   (uint8_t const *)&src->vb_ipv4addr,
+					   sizeof(src->vb_ipv4addr), src->tainted);
 
 	/*
 	 *	<1 uint8 prefix> + <4 bytes address>
@@ -2648,10 +2719,10 @@ static inline int fr_value_box_cast_to_octets(TALLOC_CTX *ctx, fr_value_box_t *d
 		uint8_t *bin;
 
 		if (fr_value_box_mem_alloc(ctx, &bin, dst, dst_enumv,
-					   sizeof(src->vb_ip.addr.v4.s_addr) + 1, src->tainted) < 0) return -1;
+					   sizeof(src->vb_ipv4addr) + 1, src->tainted) < 0) return -1;
 
 		bin[0] = src->vb_ip.prefix;
-		memcpy(&bin[1], (uint8_t const *)&src->vb_ip.addr.v4.s_addr, sizeof(src->vb_ip.addr.v4.s_addr));
+		memcpy(&bin[1], (uint8_t const *)&src->vb_ipv4addr, sizeof(src->vb_ipv4addr));
 	}
 		return 0;
 
@@ -2660,8 +2731,8 @@ static inline int fr_value_box_cast_to_octets(TALLOC_CTX *ctx, fr_value_box_t *d
 	 */
 	case FR_TYPE_IPV6_ADDR:
 		return fr_value_box_memdup(ctx, dst, dst_enumv,
-					   (uint8_t const *)src->vb_ip.addr.v6.s6_addr,
-					   sizeof(src->vb_ip.addr.v6.s6_addr), src->tainted);
+					   (uint8_t const *)src->vb_ipv6addr,
+					   sizeof(src->vb_ipv6addr), src->tainted);
 
 	/*
 	 *	<1 uint8 prefix> + <1 uint8 scope> + <16 bytes address>
@@ -2671,10 +2742,10 @@ static inline int fr_value_box_cast_to_octets(TALLOC_CTX *ctx, fr_value_box_t *d
 		uint8_t *bin;
 
 		if (fr_value_box_mem_alloc(ctx, &bin, dst, dst_enumv,
-					   sizeof(src->vb_ip.addr.v6.s6_addr) + 2, src->tainted) < 0) return -1;
+					   sizeof(src->vb_ipv6addr) + 2, src->tainted) < 0) return -1;
 		bin[0] = src->vb_ip.scope_id;
 		bin[1] = src->vb_ip.prefix;
-		memcpy(&bin[2], src->vb_ip.addr.v6.s6_addr, sizeof(src->vb_ip.addr.v6.s6_addr));
+		memcpy(&bin[2], src->vb_ipv6addr, sizeof(src->vb_ipv6addr));
 	}
 		return 0;
 
@@ -2789,7 +2860,7 @@ static inline int fr_value_box_cast_to_ipv4addr(TALLOC_CTX *ctx, fr_value_box_t 
 
 	switch (src_type) {
 	case FR_TYPE_IPV6_ADDR:
-		if (memcmp(src->vb_ip.addr.v6.s6_addr, v4_v6_map, sizeof(v4_v6_map)) != 0) {
+		if (memcmp(src->vb_ipv6addr, v4_v6_map, sizeof(v4_v6_map)) != 0) {
 		bad_v6_prefix_map:
 			fr_strerror_printf("Invalid cast from %s to %s.  No IPv4-IPv6 mapping prefix",
 					   fr_type_to_str(src->type),
@@ -2797,7 +2868,7 @@ static inline int fr_value_box_cast_to_ipv4addr(TALLOC_CTX *ctx, fr_value_box_t 
 			return -1;
 		}
 
-		memcpy(&dst->vb_ip.addr.v4, &src->vb_ip.addr.v6.s6_addr[sizeof(v4_v6_map)],
+		memcpy(&dst->vb_ip.addr.v4, &src->vb_ipv6addr[sizeof(v4_v6_map)],
 		       sizeof(dst->vb_ip.addr.v4));
 
 		break;
@@ -2826,20 +2897,20 @@ static inline int fr_value_box_cast_to_ipv4addr(TALLOC_CTX *ctx, fr_value_box_t 
 					   src->vb_ip.prefix);
 			return -1;
 		}
-		if (memcmp(&src->vb_ip.addr.v6.s6_addr, v4_v6_map, sizeof(v4_v6_map)) != 0) goto bad_v6_prefix_map;
-		memcpy(&dst->vb_ip.addr.v4, &src->vb_ip.addr.v6.s6_addr[sizeof(v4_v6_map)],
+		if (memcmp(&src->vb_ipv6addr, v4_v6_map, sizeof(v4_v6_map)) != 0) goto bad_v6_prefix_map;
+		memcpy(&dst->vb_ip.addr.v4, &src->vb_ipv6addr[sizeof(v4_v6_map)],
 		       sizeof(dst->vb_ip.addr.v4));
 		break;
 
 	case FR_TYPE_OCTETS:
-		if (src->vb_length != sizeof(dst->vb_ip.addr.v4.s_addr)) {
+		if (src->vb_length != sizeof(dst->vb_ipv4addr)) {
 			fr_strerror_printf("Invalid cast from %s to %s.  Needed octet string of length %zu, got %zu",
 					   fr_type_to_str(src->type),
 					   fr_type_to_str(dst_type),
-					   sizeof(dst->vb_ip.addr.v4.s_addr), src->vb_length);
+					   sizeof(dst->vb_ipv4addr), src->vb_length);
 			return -1;
 		}
-		memcpy(&dst->vb_ip.addr.v4, src->vb_octets, sizeof(dst->vb_ip.addr.v4.s_addr));
+		memcpy(&dst->vb_ip.addr.v4, src->vb_octets, sizeof(dst->vb_ipv4addr));
 		break;
 
 	case FR_TYPE_UINT32:
@@ -2847,7 +2918,7 @@ static inline int fr_value_box_cast_to_ipv4addr(TALLOC_CTX *ctx, fr_value_box_t 
 		uint32_t net;
 
 		net = ntohl(src->vb_uint32);
-		memcpy(&dst->vb_ip.addr.v4, (uint8_t *)&net, sizeof(dst->vb_ip.addr.v4.s_addr));
+		memcpy(&dst->vb_ip.addr.v4, (uint8_t *)&net, sizeof(dst->vb_ipv4addr));
 	}
 		break;
 
@@ -2913,20 +2984,20 @@ static inline int fr_value_box_cast_to_ipv4prefix(TALLOC_CTX *ctx, fr_value_box_
 	 *	Copy the last four bytes, to make an IPv4prefix
 	 */
 	case FR_TYPE_IPV6_ADDR:
-		if (memcmp(src->vb_ip.addr.v6.s6_addr, v4_v6_map, sizeof(v4_v6_map)) != 0) {
+		if (memcmp(src->vb_ipv6addr, v4_v6_map, sizeof(v4_v6_map)) != 0) {
 		bad_v6_prefix_map:
 			fr_strerror_printf("Invalid cast from %s to %s.  No IPv4-IPv6 mapping prefix",
 					   fr_type_to_str(src->type),
 					   fr_type_to_str(dst_type));
 			return -1;
 		}
-		memcpy(&dst->vb_ip.addr.v4.s_addr, &src->vb_ip.addr.v6.s6_addr[sizeof(v4_v6_map)],
-		       sizeof(dst->vb_ip.addr.v4.s_addr));
+		memcpy(&dst->vb_ipv4addr, &src->vb_ipv6addr[sizeof(v4_v6_map)],
+		       sizeof(dst->vb_ipv4addr));
 		dst->vb_ip.prefix = 32;
 		break;
 
 	case FR_TYPE_IPV6_PREFIX:
-		if (memcmp(src->vb_ip.addr.v6.s6_addr, v4_v6_map, sizeof(v4_v6_map)) != 0) goto bad_v6_prefix_map;
+		if (memcmp(src->vb_ipv6addr, v4_v6_map, sizeof(v4_v6_map)) != 0) goto bad_v6_prefix_map;
 
 		if (src->vb_ip.prefix < (sizeof(v4_v6_map) << 3)) {
 			fr_strerror_printf("Invalid cast from %s to %s. Expected prefix >= %u bits got %u bits",
@@ -2935,8 +3006,8 @@ static inline int fr_value_box_cast_to_ipv4prefix(TALLOC_CTX *ctx, fr_value_box_
 					   (unsigned int)(sizeof(v4_v6_map) << 3), src->vb_ip.prefix);
 			return -1;
 		}
-		memcpy(&dst->vb_ip.addr.v4.s_addr, &src->vb_ip.addr.v6.s6_addr[sizeof(v4_v6_map)],
-		       sizeof(dst->vb_ip.addr.v4.s_addr));
+		memcpy(&dst->vb_ipv4addr, &src->vb_ipv6addr[sizeof(v4_v6_map)],
+		       sizeof(dst->vb_ipv4addr));
 
 		/*
 		 *	Subtract the bits used by the v4_v6_map to get the v4 prefix bits
@@ -2945,15 +3016,15 @@ static inline int fr_value_box_cast_to_ipv4prefix(TALLOC_CTX *ctx, fr_value_box_
 		break;
 
 	case FR_TYPE_OCTETS:
-		if (src->vb_length != sizeof(dst->vb_ip.addr.v4.s_addr) + 1) {
+		if (src->vb_length != sizeof(dst->vb_ipv4addr) + 1) {
 			fr_strerror_printf("Invalid cast from %s to %s.  Needed octet string of length %zu, got %zu",
 					   fr_type_to_str(src->type),
 					   fr_type_to_str(dst_type),
-					   sizeof(dst->vb_ip.addr.v4.s_addr) + 1, src->vb_length);
+					   sizeof(dst->vb_ipv4addr) + 1, src->vb_length);
 			return -1;
 		}
 		dst->vb_ip.prefix = src->vb_octets[0];
-		memcpy(&dst->vb_ip.addr.v4, &src->vb_octets[1], sizeof(dst->vb_ip.addr.v4.s_addr));
+		memcpy(&dst->vb_ip.addr.v4, &src->vb_octets[1], sizeof(dst->vb_ipv4addr));
 		break;
 
 	case FR_TYPE_UINT32:
@@ -2961,7 +3032,7 @@ static inline int fr_value_box_cast_to_ipv4prefix(TALLOC_CTX *ctx, fr_value_box_
 		uint32_t net;
 
 		net = ntohl(src->vb_uint32);
-		memcpy(&dst->vb_ip.addr.v4, (uint8_t *)&net, sizeof(dst->vb_ip.addr.v4.s_addr));
+		memcpy(&dst->vb_ip.addr.v4, (uint8_t *)&net, sizeof(dst->vb_ipv4addr));
 		dst->vb_ip.prefix = 32;
 		break;
 	}
@@ -3021,19 +3092,19 @@ static inline int fr_value_box_cast_to_ipv6addr(TALLOC_CTX *ctx, fr_value_box_t 
 	switch (src_type) {
 	case FR_TYPE_IPV4_ADDR:
 	{
-		uint8_t *p = dst->vb_ip.addr.v6.s6_addr;
+		uint8_t *p = dst->vb_ipv6addr;
 
 		/* Add the v4/v6 mapping prefix */
 		memcpy(p, v4_v6_map, sizeof(v4_v6_map));
 		p += sizeof(v4_v6_map);
-		memcpy(p, (uint8_t const *)&src->vb_ip.addr.v4.s_addr, sizeof(src->vb_ip.addr.v4.s_addr));
+		memcpy(p, (uint8_t const *)&src->vb_ipv4addr, sizeof(src->vb_ipv4addr));
 		dst->vb_ip.scope_id = 0;
 	}
 		break;
 
 	case FR_TYPE_IPV4_PREFIX:
 	{
-		uint8_t *p = dst->vb_ip.addr.v6.s6_addr;
+		uint8_t *p = dst->vb_ipv6addr;
 
 		if (src->vb_ip.prefix != 32) {
 			fr_strerror_printf("Invalid cast from %s to %s.  Only /32 (not /%i) prefixes may be "
@@ -3047,7 +3118,7 @@ static inline int fr_value_box_cast_to_ipv6addr(TALLOC_CTX *ctx, fr_value_box_t 
 		/* Add the v4/v6 mapping prefix */
 		memcpy(p, v4_v6_map, sizeof(v4_v6_map));
 		p += sizeof(v4_v6_map);
-		memcpy(p, (uint8_t const *)&src->vb_ip.addr.v4.s_addr, sizeof(src->vb_ip.addr.v4.s_addr));
+		memcpy(p, (uint8_t const *)&src->vb_ipv4addr, sizeof(src->vb_ipv4addr));
 		dst->vb_ip.scope_id = 0;
 	}
 		break;
@@ -3064,20 +3135,20 @@ static inline int fr_value_box_cast_to_ipv6addr(TALLOC_CTX *ctx, fr_value_box_t 
 		FALL_THROUGH;
 
 	case FR_TYPE_IPV6_ADDR:		/* Needed for handling combo addresses */
-		memcpy(dst->vb_ip.addr.v6.s6_addr, src->vb_ip.addr.v6.s6_addr,
-		       sizeof(dst->vb_ip.addr.v6.s6_addr));
+		memcpy(dst->vb_ipv6addr, src->vb_ipv6addr,
+		       sizeof(dst->vb_ipv6addr));
 		dst->vb_ip.scope_id = src->vb_ip.scope_id;
 		break;
 
 	case FR_TYPE_OCTETS:
-		if (src->vb_length != sizeof(dst->vb_ip.addr.v6.s6_addr)) {
+		if (src->vb_length != sizeof(dst->vb_ipv6addr)) {
 			fr_strerror_printf("Invalid cast from %s to %s.  Needed octet string of length %zu, got %zu",
 					   fr_type_to_str(src->type),
 					   fr_type_to_str(dst_type),
-					   sizeof(dst->vb_ip.addr.v6.s6_addr), src->vb_length);
+					   sizeof(dst->vb_ipv6addr), src->vb_length);
 			return -1;
 		}
-		memcpy(&dst->vb_ip.addr.v6.s6_addr, src->vb_octets, sizeof(dst->vb_ip.addr.v6.s6_addr));
+		memcpy(&dst->vb_ipv6addr, src->vb_octets, sizeof(dst->vb_ipv6addr));
 		break;
 
 	default:
@@ -3131,12 +3202,12 @@ static inline int fr_value_box_cast_to_ipv6prefix(TALLOC_CTX *ctx, fr_value_box_
 	switch (src_type) {
 	case FR_TYPE_IPV4_ADDR:
 	{
-		uint8_t *p = dst->vb_ip.addr.v6.s6_addr;
+		uint8_t *p = dst->vb_ipv6addr;
 
 		/* Add the v4/v6 mapping prefix */
 		memcpy(p, v4_v6_map, sizeof(v4_v6_map));
 		p += sizeof(v4_v6_map);
-		memcpy(p, (uint8_t const *)&src->vb_ip.addr.v4.s_addr, sizeof(src->vb_ip.addr.v4.s_addr));
+		memcpy(p, (uint8_t const *)&src->vb_ipv4addr, sizeof(src->vb_ipv4addr));
 		dst->vb_ip.prefix = 128;
 		dst->vb_ip.scope_id = 0;
 	}
@@ -3144,12 +3215,12 @@ static inline int fr_value_box_cast_to_ipv6prefix(TALLOC_CTX *ctx, fr_value_box_
 
 	case FR_TYPE_IPV4_PREFIX:
 	{
-		uint8_t *p = dst->vb_ip.addr.v6.s6_addr;
+		uint8_t *p = dst->vb_ipv6addr;
 
 		/* Add the v4/v6 mapping prefix */
 		memcpy(p, v4_v6_map, sizeof(v4_v6_map));
 		p += sizeof(v4_v6_map);
-		memcpy(p, (uint8_t const *)&src->vb_ip.addr.v4.s_addr, sizeof(src->vb_ip.addr.v4.s_addr));
+		memcpy(p, (uint8_t const *)&src->vb_ipv4addr, sizeof(src->vb_ipv4addr));
 		dst->vb_ip.prefix = (sizeof(v4_v6_map) << 3) + src->vb_ip.prefix;
 		dst->vb_ip.scope_id = 0;
 	}
@@ -3162,22 +3233,22 @@ static inline int fr_value_box_cast_to_ipv6prefix(TALLOC_CTX *ctx, fr_value_box_
 	case FR_TYPE_IPV6_ADDR:
 		dst->vb_ip.prefix = 128;
 	v6_common:
-		memcpy(dst->vb_ip.addr.v6.s6_addr, src->vb_ip.addr.v6.s6_addr,
-		       sizeof(dst->vb_ip.addr.v6.s6_addr));
+		memcpy(dst->vb_ipv6addr, src->vb_ipv6addr,
+		       sizeof(dst->vb_ipv6addr));
 		dst->vb_ip.scope_id = src->vb_ip.scope_id;
 		break;
 
 	case FR_TYPE_OCTETS:
-		if (src->vb_length != (sizeof(dst->vb_ip.addr.v6.s6_addr) + 2)) {
+		if (src->vb_length != (sizeof(dst->vb_ipv6addr) + 2)) {
 			fr_strerror_printf("Invalid cast from %s to %s.  Needed octet string of length %zu, got %zu",
 					   fr_type_to_str(src->type),
 					   fr_type_to_str(dst_type),
-					   sizeof(dst->vb_ip.addr.v6.s6_addr) + 2, src->vb_length);
+					   sizeof(dst->vb_ipv6addr) + 2, src->vb_length);
 			return -1;
 		}
 		dst->vb_ip.scope_id = src->vb_octets[0];
 		dst->vb_ip.prefix = src->vb_octets[1];
-		memcpy(&dst->vb_ip.addr.v6.s6_addr, src->vb_octets, sizeof(dst->vb_ip.addr.v6.s6_addr));
+		memcpy(&dst->vb_ipv6addr, src->vb_octets, sizeof(dst->vb_ipv6addr));
 		break;
 
 	default:

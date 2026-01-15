@@ -46,9 +46,11 @@ states:
       trigger_mode: unordered
       triggers:
       - hs_access_request_received:
-          all:
-            pattern:
-              reg_pattern: (\d+)-(\d+)-(\d+)-(\d+):(\d+):(\d+) Homeserver (\d+\.\d+\.\d+\.\d+):(\d+) rx Access-Request.*
+          pattern:
+            reg_pattern: \- INFO \- (\d+)-(\d+)-(\d+)-(\d+):(\d+):(\d+) Homeserver (\d+\.\d+\.\d+\.\d+):(\d+) rx Access-Request src=
+      - hs_access_accept_sent:
+          pattern:
+            reg_pattern: \- INFO \- (\d+)-(\d+)-(\d+)-(\d+):(\d+):(\d+) Homeserver (\d+\.\d+\.\d+\.\d+):(\d+) tx Access-Accept src=
   state_2:
     description: Check load-generator Status-Server stats
     host:
@@ -56,12 +58,12 @@ states:
         actions:
         - execute_command:
             command: |
+              # This command will query the load-generator's built-in Status-Server for statistics. Port 1820 configured to be used for Status-Server.
               printf 'User-Name := "testuser"\nUser-Password := "testpass"' | /usr/bin/radclient -x localhost:1820 status testing123
     verify:
       timeout: 5
       trigger_mode: unordered
       triggers:
       - loadgen-recv-status-server:
-          all:
-            pattern:
-              reg_pattern: \- INFO \- (\d+) requests processed successfully,
+          pattern:
+            reg_pattern: \- INFO \- (\d+) requests processed successfully,

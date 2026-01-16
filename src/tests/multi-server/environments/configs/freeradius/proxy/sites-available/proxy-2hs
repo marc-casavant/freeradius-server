@@ -1,0 +1,176 @@
+server proxy-2hs {
+	namespace = radius
+	radius {
+		Access-Request {
+			session {
+			}
+		}
+	}
+	dictionary {
+	}
+	listen authentication {
+		type = Access-Request
+		type = Status-Server
+		transport = udp
+		require_message_authenticator = auto
+		limit_proxy_state = auto
+		limit {
+			max_clients = 256
+			max_connections = 256
+			idle_timeout = 60.0
+			dynamic_timeout = 600.0
+			nak_lifetime = 30.0
+			cleanup_delay = 5.0
+		}
+		udp {
+			ipaddr = *
+			port = 1812
+			networks {
+				allow = 127/8
+				allow = 192.0.2/24
+			}
+		}
+		tcp {
+			ipaddr = *
+			port = 1812
+			networks {
+				allow = 127/8
+				allow = 192.0.2/24
+			}
+		}
+	}
+	listen authentication {
+		type = Access-Request
+		type = Status-Server
+		transport = tcp
+		tcp {
+			ipaddr = *
+			port = 1812
+			networks {
+				allow = 127/8
+				allow = 192.0.2/24
+			}
+		}
+	}
+	listen accounting {
+		type = Accounting-Request
+		transport = udp
+		udp {
+			ipaddr = *
+			port = 1813
+		}
+	}
+
+	recv Access-Request {
+		filter_username
+		files
+		control.Auth-Type := "redundant-load-balance-proxy"
+		ok
+	}
+
+	recv Status-Server {
+		ok
+	}
+
+	authenticate redundant-load-balance-proxy {
+		redundant-load-balance {
+			radius-module-homeserver1
+			radius-module-homeserver2
+		}
+	}
+
+	authenticate pap {
+		pap
+	}
+
+	authenticate chap {
+		chap
+	}
+
+	authenticate mschap {
+		mschap
+	}
+
+	authenticate digest {
+		digest
+	}
+
+	authenticate ldap {
+		-ldap
+	}
+
+	authenticate eap {
+		eap
+	}
+
+	send Access-Challenge {
+		attr_filter.access_challenge
+		handled
+	}
+
+	send Access-Accept {
+		reply += session-state
+		eap
+		-sql
+		remove_reply_message_if_eap
+	}
+
+	send Access-Reject {
+		-sql
+		attr_filter.access_reject
+		eap
+		remove_reply_message_if_eap
+		delay_reject
+	}
+
+	# Defaults
+	#recv Accounting-Request {
+	#	if (!Event-Timestamp) {
+	#		Event-Timestamp := %time.request() - %{Acct-Delay-Time || 0}
+	#	}
+	#	acct_unique
+	#	files_accounting
+	#}
+
+	recv Accounting-Request {
+		if (!Event-Timestamp) {
+			Event-Timestamp := %time.request() - %{Acct-Delay-Time || 0}
+		}
+
+		redundant-load-balance {
+			radius-module-homeserver1-acct
+			radius-module-homeserver2-acct
+		}
+
+		ok
+	}
+
+	accounting Start {
+		-sql
+	}
+
+	accounting Stop {
+		-sql
+	}
+
+	accounting Interim-Update {
+		-sql
+	}
+
+	accounting Accounting-On {
+		-sql
+	}
+
+	accounting Accounting-Off {
+		-sql
+	}
+
+	accounting Failed {
+	}
+
+	send Accounting-Response {
+		detail
+		attr_filter.accounting_response
+	}
+
+}

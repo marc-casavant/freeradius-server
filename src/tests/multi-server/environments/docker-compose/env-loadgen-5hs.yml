@@ -1,15 +1,15 @@
 # ---------------------------------------------------------------
 # Docker Compose Test Environment: 
 #
-#   load-generator --> HS1 -->                                         
+#                  --> HS1 (auto-accept)                                         
 #                              
-#                  --> HS2 -->  |
-#                               | --> DB/File (example)                            
-#                  --> HS3 -->  |          
+#                  --> HS2 (auto-accept)
+#                        
+#   load-generator --> HS3 (auto-accept)
 #   
-#                  --> HS4 --> 
+#                  --> HS4 (auto-accept) 
 #                  
-#                  --> HS5 -->
+#                  --> HS5 (auto-accept)
 #
 # ---------------------------------------------------------------
 x-common-config: &id001

@@ -1,4 +1,4 @@
-timeout: 70
+timeout: 310
 state_order: sequence
 states:
   state_1:
@@ -11,13 +11,12 @@ states:
               #
               # proto_load configuration via environment variables
               #
-              # export TEST_CONF_START_PPS=1000 && export TEST_CONF_MAX_PPS=10000 && export TEST_CONF_DURATION=5 && export TEST_CONF_STEP=1000 && export TEST_CONF_PARALLEL=100 && export TEST_CONF_MAX_BACKLOG=10000 TEST_CONF_REPEAT="no" && sleep 15 && ./docker-entrypoint.sh
 
-              export TEST_CONF_START_PPS=5
-              export TEST_CONF_MAX_PPS=10
+              export TEST_CONF_START_PPS=300
+              export TEST_CONF_MAX_PPS=350
               # Duration must be equal or greater than max pps for proto_load to calculate "pps_accepted" effectively
-              export TEST_CONF_DURATION=5
-              export TEST_CONF_STEP=5
+              export TEST_CONF_DURATION=60
+              export TEST_CONF_STEP=10
               export TEST_CONF_PARALLEL=1
               export TEST_CONF_MAX_BACKLOG=1000
               export TEST_CONF_REPEAT="no"
@@ -42,7 +41,7 @@ states:
 
             detach: true
     verify:
-      timeout: 30
+      timeout: 300
       trigger_mode: unordered
       triggers:
       - hs-access-request-received:

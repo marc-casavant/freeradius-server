@@ -66,12 +66,12 @@ server hs-auto-accept {
 	}
 
 	recv Access-Request {
-	    %linelog_test_framework("hs_access_request_received - INFO - %Y-%m-%d-%H:%G:%e Homeserver %{Net.Dst.IP}:%{Net.Dst.Port} rx Access-Request src=%{Net.Src.IP}:%{Net.Src.Port} user=%{%{User-Name}} Calling-Station-Id=%{Calling-Station-Id}")
+	    %linelog_test_framework("hs-access-request-received - INFO - %Y-%m-%d-%H:%G:%e Homeserver %{Net.Dst.IP}:%{Net.Dst.Port} rx Access-Request src=%{Net.Src.IP}:%{Net.Src.Port} user=%{%{User-Name}} Calling-Station-Id=%{Calling-Station-Id}")
 		accept
 	}
 
 	send Access-Accept {
-		%linelog_test_framework("hs_access_accept_sent - INFO - %Y-%m-%d-%H:%G:%e Homeserver %{Net.Dst.IP}:%{Net.Dst.Port} tx Access-Accept src=%{Net.Src.IP}:%{Net.Src.Port} dst=%{Net.Dst.IP}:%{Net.Dst.Port}")
+		%linelog_test_framework("hs-access-accept-sent - INFO - %Y-%m-%d-%H:%G:%e Homeserver %{Net.Dst.IP}:%{Net.Dst.Port} tx Access-Accept src=%{Net.Src.IP}:%{Net.Src.Port} dst=%{Net.Dst.IP}:%{Net.Dst.Port}")
 	    handled
 	}
 

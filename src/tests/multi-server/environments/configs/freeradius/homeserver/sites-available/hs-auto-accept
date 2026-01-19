@@ -1,5 +1,7 @@
 server hs-auto-accept {
+
 	namespace = radius
+
 	radius {
 		Access-Request {
 			session {
@@ -66,68 +68,85 @@ server hs-auto-accept {
 	}
 
 	recv Access-Request {
-	    %linelog_test_framework("hs-access-request-received - INFO - %Y-%m-%d-%H:%G:%e Homeserver %{Net.Dst.IP}:%{Net.Dst.Port} rx Access-Request src=%{Net.Src.IP}:%{Net.Src.Port} user=%{%{User-Name}} Calling-Station-Id=%{Calling-Station-Id}")
+		%linelog("hs-access-request-received - INFO - %Y-%m-%d-%H:%G:%e Homeserver %{Net.Dst.IP}:%{Net.Dst.Port} rx Access-Request src=%{Net.Src.IP}:%{Net.Src.Port} user=%{%{User-Name}} Calling-Station-Id=%{Calling-Station-Id}")
 		accept
 	}
 
 	send Access-Accept {
-		%linelog_test_framework("hs-access-accept-sent - INFO - %Y-%m-%d-%H:%G:%e Homeserver %{Net.Dst.IP}:%{Net.Dst.Port} tx Access-Accept src=%{Net.Src.IP}:%{Net.Src.Port} dst=%{Net.Dst.IP}:%{Net.Dst.Port}")
-	    handled
+		%linelog("hs-access-accept-sent - INFO - %Y-%m-%d-%H:%G:%e Homeserver %{Net.Dst.IP}:%{Net.Dst.Port} tx Access-Accept src=%{Net.Src.IP}:%{Net.Src.Port} dst=%{Net.Dst.IP}:%{Net.Dst.Port}")
+	    	handled
 	}
 
 	recv Status-Server {
 		ok
 	}
+
 	authenticate pap {
 		pap
 	}
+
 	authenticate chap {
 		chap
 	}
+
 	authenticate mschap {
 		mschap
 	}
+
 	authenticate digest {
 		digest
 	}
+
 	authenticate ldap {
 		-ldap
 	}
+
 	authenticate eap {
 		eap
 	}
+
 	send Access-Challenge {
 		attr_filter.access_challenge
 		handled
 	}
+
 	send Access-Reject {
+		%linelog_test_framework("hs-access-reject-sent - ERROR - %Y-%m-%d-%H:%G:%e Homeserver %{Net.Dst.IP}:%{Net.Dst.Port} tx Access-Accept src=%{Net.Src.IP}:%{Net.Src.Port} dst=%{Net.Dst.IP}:%{Net.Dst.Port}")
 		-sql
 		attr_filter.access_reject
 		eap
 		remove_reply_message_if_eap
 		delay_reject
 	}
+
 	recv Accounting-Request {
 		acct_unique
 		files_accounting
 	}
+
 	accounting Start {
 		-sql
 	}
+
 	accounting Stop {
 		-sql
 	}
+
 	accounting Interim-Update {
 		-sql
 	}
+
 	accounting Accounting-On {
 		-sql
 	}
+
 	accounting Accounting-Off {
 		-sql
 	}
+
 	accounting Failed {
 	}
+
 	send Accounting-Response {
 		detail
 		attr_filter.accounting_response

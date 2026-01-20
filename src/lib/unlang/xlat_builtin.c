@@ -58,6 +58,25 @@ typedef struct {
 	fr_dict_t const			*dict;		//!< Restrict xlat to this namespace
 } xlat_pair_decode_uctx_t;
 
+/** Copy an argument from the input list to the output cursor.
+ *
+ *  For now we just move it.  This utility function will let us have
+ *  value-box cursors as input arguments.
+ *
+ * @param[in] ctx	talloc ctx
+ * @param[out] out	where the value-box will be stored
+ * @param[in] in	input value-box list
+ * @param[in] vb		the argument to copy
+ */
+void xlat_arg_copy_out(TALLOC_CTX *ctx, fr_dcursor_t *out, fr_value_box_list_t *in, fr_value_box_t *vb)
+{
+	fr_value_box_list_remove(in, vb);
+	if (talloc_parent(vb) != ctx) {
+		(void) talloc_steal(ctx, vb);
+	}
+	fr_dcursor_append(out, vb);
+}
+
 /*
  *	Regular xlat functions
  */
@@ -134,24 +153,24 @@ static void xlat_debug_attr_vp(request_t *request, fr_pair_t const *vp)
 	fr_table_num_ordered_t const	*type;
 	size_t				i;
 	ssize_t				slen;
-	char const			*name;
+	fr_sbuff_t			sbuff;
 	char				buffer[1024];
+
+	sbuff = FR_SBUFF_OUT(buffer, sizeof(buffer));
 
 	/*
 	 *	Squash the names down if necessary.
 	 */
 	if (!RDEBUG_ENABLED3) {
-		slen = fr_pair_print_name(&FR_SBUFF_OUT(buffer, sizeof(buffer)), NULL, &vp);
-		if (slen <= 0) return;
-		name = buffer;
-
+		slen = fr_pair_print_name(&sbuff, NULL, &vp);
 	} else {
-		name = vp->da->name;
+		slen = fr_sbuff_in_sprintf(&sbuff, "%s %s ", vp->da->name, fr_tokens[vp->op]);
 	}
+	if (slen <= 0) return;
 
 	switch (vp->vp_type) {
 	case FR_TYPE_STRUCTURAL:
-		RIDEBUG2("%s = {", name);
+		RIDEBUG2("%s{", buffer);
 		RINDENT();
 		xlat_debug_attr_list(request, &vp->vp_group);
 		REXDENT();
@@ -159,7 +178,8 @@ static void xlat_debug_attr_vp(request_t *request, fr_pair_t const *vp)
 		break;
 
 	default:
-		RIDEBUG2("%s = %pV", name, &vp->data);
+		if (fr_pair_print_value_quoted(&sbuff, vp, T_DOUBLE_QUOTED_STRING) <= 0) return;
+		RIDEBUG2("%s", buffer);
 	}
 
 	if (!RDEBUG_ENABLED3) return;
@@ -235,14 +255,13 @@ static void xlat_debug_attr_vp(request_t *request, fr_pair_t const *vp)
  * can be used for concatenation, casting, and marking up output boxes as
  * safe_for.
  */
-xlat_action_t xlat_transparent(UNUSED TALLOC_CTX *ctx, fr_dcursor_t *out,
+xlat_action_t xlat_transparent(TALLOC_CTX *ctx, fr_dcursor_t *out,
 			       UNUSED xlat_ctx_t const *xctx,
 			       UNUSED request_t *request, fr_value_box_list_t *args)
 {
-	fr_value_box_list_foreach_safe(args, vb) {
-		fr_value_box_list_remove(args, vb);
-		fr_dcursor_append(out, vb);
-	}}
+	fr_value_box_list_foreach(args, vb) {
+		xlat_arg_copy_out(ctx, out, args, vb);
+	}
 
 	return XLAT_ACTION_DONE;
 }
@@ -1344,7 +1363,7 @@ static xlat_action_t xlat_func_map(TALLOC_CTX *ctx, fr_dcursor_t *out,
 	vb->vb_bool = false;	/* Default fail value - changed to true on success */
 	fr_dcursor_append(out, vb);
 
-	fr_value_box_list_foreach_safe(&fmt_vb->vb_group, fmt) {
+	fr_value_box_list_foreach(&fmt_vb->vb_group, fmt) {
 		if (map_afrom_attr_str(request, &map, fmt->vb_strvalue, &attr_rules, &attr_rules) < 0) {
 			RPEDEBUG("Failed parsing \"%s\" as map", fmt_vb->vb_strvalue);
 			return XLAT_ACTION_FAIL;
@@ -1381,7 +1400,7 @@ static xlat_action_t xlat_func_map(TALLOC_CTX *ctx, fr_dcursor_t *out,
 		REXDENT();
 		talloc_free(map);
 		if (ret < 0) return XLAT_ACTION_FAIL;
-	}}
+	}
 
 	vb->vb_bool = true;
 	return XLAT_ACTION_DONE;
@@ -1856,8 +1875,7 @@ static xlat_action_t xlat_func_base64_decode(TALLOC_CTX *ctx, fr_dcursor_t *out,
 	 *	FR_BASE64_DEC_LENGTH produces 2 for empty strings...
 	 */
 	if (in->vb_length == 0) {
-		fr_value_box_list_remove(args, in);
-		fr_dcursor_append(out, in);
+		xlat_arg_copy_out(ctx, out, args, in);
 		return XLAT_ACTION_DONE;
 	}
 
@@ -2268,17 +2286,16 @@ static xlat_arg_parser_t const xlat_func_join_args[] = {
  *
  * null boxes are not preserved.
  */
-static xlat_action_t xlat_func_join(UNUSED TALLOC_CTX *ctx, fr_dcursor_t *out,
+static xlat_action_t xlat_func_join(TALLOC_CTX *ctx, fr_dcursor_t *out,
 				    UNUSED xlat_ctx_t const *xctx,
 				    UNUSED request_t *request, fr_value_box_list_t *in)
 {
 	fr_value_box_list_foreach(in, arg) {
 		fr_assert(arg->type == FR_TYPE_GROUP);
 
-		fr_value_box_list_foreach_safe(&arg->vb_group, vb) {
-			fr_value_box_list_remove(&arg->vb_group, vb);
-			fr_dcursor_append(out, vb);
-		}}
+		fr_value_box_list_foreach(&arg->vb_group, vb) {
+			xlat_arg_copy_out(ctx, out, &arg->vb_group, vb);
+		}
 	}
 	return XLAT_ACTION_DONE;
 }
@@ -3957,8 +3974,8 @@ static xlat_action_t xlat_func_time_is_dst(TALLOC_CTX *ctx, fr_dcursor_t *out,
  *
  * If upper is true, change to uppercase, otherwise, change to lowercase
  */
-static xlat_action_t xlat_change_case(UNUSED TALLOC_CTX *ctx, fr_dcursor_t *out,
-				       UNUSED request_t *request, fr_value_box_list_t *args, bool upper)
+static xlat_action_t xlat_change_case(TALLOC_CTX *ctx, fr_dcursor_t *out,
+				      UNUSED request_t *request, fr_value_box_list_t *args, bool upper)
 {
 	char		*p;
 	char const	*end;
@@ -3974,8 +3991,7 @@ static xlat_action_t xlat_change_case(UNUSED TALLOC_CTX *ctx, fr_dcursor_t *out,
 		p++;
 	}
 
-	fr_value_box_list_remove(args, vb);	/* Can't leave it in both lists */
-	fr_dcursor_append(out, vb);
+	xlat_arg_copy_out(ctx, out, args, vb);
 
 	return XLAT_ACTION_DONE;
 }

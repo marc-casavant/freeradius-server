@@ -1015,6 +1015,7 @@ fi
 %{_libdir}/freeradius/rlm_files.so
 %{_libdir}/freeradius/rlm_icmp.so
 %{_libdir}/freeradius/rlm_isc_dhcp.so
+%{_libdir}/freeradius/rlm_kv.so
 %{_libdir}/freeradius/rlm_linelog.so
 %{_libdir}/freeradius/rlm_logtee.so
 %{_libdir}/freeradius/rlm_mschap.so
@@ -1056,6 +1057,7 @@ fi
 %{_libdir}/freeradius/libfreeradius-internal.so
 %{_libdir}/freeradius/libfreeradius-radius.so
 %{_libdir}/freeradius/libfreeradius-radius-bio.so
+%{_libdir}/freeradius/libfreeradius-radius-stats.so
 %{_libdir}/freeradius/libfreeradius-sim.so
 %{_libdir}/freeradius/libfreeradius-tacacs.so
 %{_libdir}/freeradius/libfreeradius-tftp.so

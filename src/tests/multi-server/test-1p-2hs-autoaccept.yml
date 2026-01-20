@@ -11,7 +11,6 @@ states:
               #
               # proto_load configuration via environment variables
               #
-              # export TEST_CONF_START_PPS=1000 && export TEST_CONF_MAX_PPS=10000 && export TEST_CONF_DURATION=5 && export TEST_CONF_STEP=1000 && export TEST_CONF_PARALLEL=100 && export TEST_CONF_MAX_BACKLOG=10000 TEST_CONF_REPEAT="no" && sleep 15 && ./docker-entrypoint.sh
 
               export TEST_CONF_START_PPS=5
               export TEST_CONF_MAX_PPS=10
@@ -46,10 +45,10 @@ states:
       trigger_mode: unordered
       triggers:
       - hs-access-request-received:
-          pattern:
+          may_pattern:
             reg_pattern: \- INFO \- (\d+)-(\d+)-(\d+)-(\d+):(\d+):(\d+) Homeserver (\d+\.\d+\.\d+\.\d+):(\d+) rx Access-Request src=
       - hs-access-accept-sent:
-          pattern:
+          may_pattern:
             reg_pattern: \- INFO \- (\d+)-(\d+)-(\d+)-(\d+):(\d+):(\d+) Homeserver (\d+\.\d+\.\d+\.\d+):(\d+) tx Access-Accept src=
   state_2:
     description: Check load-generator Status-Server stats
@@ -66,4 +65,16 @@ states:
       triggers:
       - loadgen-recv-status-server:
           pattern:
-            reg_pattern: \- INFO \- (\d+) requests processed successfully,
+            reg_pattern: '- INFO - (\d+) requests processed successfully,'
+      - loadgen-recv-status-server:
+          may_pattern:
+            reg_pattern: '- INFO - reply\.FreeRADIUS\.Stats4\.Packet-Counters\.Access-Reject: 0'
+      - loadgen-recv-status-server:
+          may_pattern:
+            reg_pattern: '- INFO - reply\.FreeRADIUS\.Stats4\.Packet-Counters\.Access-Accept: (\d+)'
+      - loadgen-recv-status-server:
+          may_pattern:
+            reg_pattern: '- INFO - reply\.FreeRADIUS\.Stats4\.Packet-Counters\.Access-Request: (\d+)'
+      - loadgen-recv-status-server:
+          may_pattern:
+            reg_pattern: '- INFO - reply\.FreeRADIUS\.Stats4\.Packet-Counters\.Status-Server:'

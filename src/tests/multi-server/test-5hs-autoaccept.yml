@@ -11,7 +11,6 @@ states:
               #
               # proto_load configuration via environment variables
               #
-              # export TEST_CONF_START_PPS=1000 && export TEST_CONF_MAX_PPS=10000 && export TEST_CONF_DURATION=5 && export TEST_CONF_STEP=1000 && export TEST_CONF_PARALLEL=100 && export TEST_CONF_MAX_BACKLOG=10000 TEST_CONF_REPEAT="no" && sleep 15 && ./docker-entrypoint.sh
 
               export TEST_CONF_START_PPS=5
               export TEST_CONF_MAX_PPS=10
@@ -65,7 +64,7 @@ states:
       trigger_mode: unordered
       triggers:
       - loadgen-recv-status-server:
-          may_pattern:
+          pattern:
             reg_pattern: '- INFO - (\d+) requests processed successfully,'
       - loadgen-recv-status-server:
           may_pattern:

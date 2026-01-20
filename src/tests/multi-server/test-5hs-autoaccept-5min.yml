@@ -2,7 +2,7 @@ timeout: 370
 state_order: sequence
 states:
   state_1:
-    description: Baseline load-generator test for load-generator -> 5 home servers. Home servers auto-accept requests.
+    description: 5 minute load-generator test building off of baseline load-generator -> 5 home servers test. Home servers auto-accept requests.
     host:
       load-generator:
         actions:

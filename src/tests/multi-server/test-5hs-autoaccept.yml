@@ -46,10 +46,10 @@ states:
       trigger_mode: unordered
       triggers:
       - hs-access-request-received:
-          pattern:
+          may_pattern:
             reg_pattern: \- INFO \- (\d+)-(\d+)-(\d+)-(\d+):(\d+):(\d+) Homeserver (\d+\.\d+\.\d+\.\d+):(\d+) rx Access-Request src=
       - hs-access-accept-sent:
-          pattern:
+          may_pattern:
             reg_pattern: \- INFO \- (\d+)-(\d+)-(\d+)-(\d+):(\d+):(\d+) Homeserver (\d+\.\d+\.\d+\.\d+):(\d+) tx Access-Accept src=
   state_2:
     description: Check load-generator Status-Server stats
@@ -65,5 +65,17 @@ states:
       trigger_mode: unordered
       triggers:
       - loadgen-recv-status-server:
-          pattern:
-            reg_pattern: \- INFO \- (\d+) requests processed successfully,
+          may_pattern:
+            reg_pattern: '- INFO - (\d+) requests processed successfully,'
+      - loadgen-recv-status-server:
+          may_pattern:
+            reg_pattern: '- INFO - reply\.FreeRADIUS\.Stats4\.Packet-Counters\.Access-Reject: 0'
+      - loadgen-recv-status-server:
+          may_pattern:
+            reg_pattern: '- INFO - reply\.FreeRADIUS\.Stats4\.Packet-Counters\.Access-Accept: (\d+)'
+      - loadgen-recv-status-server:
+          may_pattern:
+            reg_pattern: '- INFO - reply\.FreeRADIUS\.Stats4\.Packet-Counters\.Access-Request: (\d+)'
+      - loadgen-recv-status-server:
+          may_pattern:
+            reg_pattern: '- INFO - reply\.FreeRADIUS\.Stats4\.Packet-Counters\.Status-Server:'

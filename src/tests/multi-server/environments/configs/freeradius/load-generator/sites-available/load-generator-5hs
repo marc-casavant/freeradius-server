@@ -53,7 +53,7 @@ server load-generator {
             # - repeat
             #     Boolean: whether to repeat the sequence from filename when it reaches the end. (repeat in proto_load_step_t.)
 
-            filename = ${confdir}/load-generator-tests/pap_1packet.req
+            filename = ${confdir}/load-generator-packets/packet.conf
 
             # optional CSV stats output file
             csv = ${confdir}/stats/load-generator-client-stats.csv
@@ -206,8 +206,8 @@ server load-generator {
         # hence the reason "reply.FreeRADIUS.Stats4" is used below.
         if ((reply.FreeRADIUS.Stats4.Packet-Counters.Access-Accept - reply.FreeRADIUS.Stats4.Packet-Counters.Status-Server) != reply.FreeRADIUS.Stats4.Packet-Counters.Access-Request) {
             %linelog_test_framework("loadgen-recv-status-server - ERROR - expected vs actual stat missmatch, reply.FreeRADIUS.Stats4.Packet-Counters.Access-Request = %{reply.FreeRADIUS.Stats4.Packet-Counters.Access-Request}, reply.FreeRADIUS.Stats4.Packet-Counters.Access-Accept = %{reply.FreeRADIUS.Stats4.Packet-Counters.Access-Accept}, reply.FreeRADIUS.Stats4.Packet-Counters.Status-Server: %{reply.FreeRADIUS.Stats4.Packet-Counters.Status-Server}")
-        } 
-        
+        }
+
         if (reply.FreeRADIUS.Stats4.Packet-Counters.Access-Request == (reply.FreeRADIUS.Stats4.Packet-Counters.Access-Accept - reply.FreeRADIUS.Stats4.Packet-Counters.Status-Server)) {
             %linelog_test_framework("loadgen-recv-status-server - INFO - %{reply.FreeRADIUS.Stats4.Packet-Counters.Access-Request} requests processed successfully, reply.FreeRADIUS.Stats4.Packet-Counters.Access-Request = %{reply.FreeRADIUS.Stats4.Packet-Counters.Access-Request}, reply.FreeRADIUS.Stats4.Packet-Counters.Access-Accept = %{reply.FreeRADIUS.Stats4.Packet-Counters.Access-Accept}, reply.FreeRADIUS.Stats4.Packet-Counters.Status-Server = %{reply.FreeRADIUS.Stats4.Packet-Counters.Status-Server}")
         }

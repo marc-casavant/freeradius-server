@@ -1,14 +1,14 @@
 # ---------------------------------------------------------------
-# Docker Compose Test Environment: 
+# Docker Compose Test Environment:
 #
-#                  --> HS1 (auto-accept)                                         
-#                              
+#                  --> HS1 (auto-accept)
+#
 #                  --> HS2 (auto-accept)
-#                        
+#
 #   load-generator --> HS3 (auto-accept)
-#   
-#                  --> HS4 (auto-accept) 
-#                  
+#
+#                  --> HS4 (auto-accept)
+#
 #                  --> HS5 (auto-accept)
 #
 # ---------------------------------------------------------------
@@ -235,7 +235,7 @@ services:
 
     - ${DATA_PATH}/freeradius/utils/${TEST_LOGGER_CONFIG}:/etc/raddb/mods-available/linelog_test_framework
     - ${DATA_PATH}/freeradius/env-setup.sh:/tmp/env-setup.sh
-    - ${DATA_PATH}/freeradius/load-generator/load-generator-tests/:/etc/raddb/load-generator-tests/
+    - ${DATA_PATH}/freeradius/load-generator/load-generator-packets/:/etc/raddb/load-generator-packets/
     - ${DATA_PATH}/freeradius/load-generator/stats/:/etc/raddb/stats/
     - ${LISTENER_DIR}/:/var/run/multi-server/
     environment:

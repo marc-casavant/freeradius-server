@@ -53,7 +53,7 @@ server load-generator {
             # - repeat
             #     Boolean: whether to repeat the sequence from filename when it reaches the end. (repeat in proto_load_step_t.)
 
-            filename = ${confdir}/load-generator-tests/pap_1packet.req
+            filename = ${confdir}/load-generator-packets/packet.conf
 
             # optional CSV stats output file
             csv = ${confdir}/stats/load-generator-client-stats.csv

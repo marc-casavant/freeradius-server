@@ -52,24 +52,6 @@ RUN chmod +x /work/build_libkqueue_deb.sh && \
     rm -rf /work /repo/pool/libkqueue*.deb
 
 #
-#  PLACEHOLDER FOR DOCUMENTATION BUILD DEPENDENCIES
-#
-
-#  - doxygen & JSON.pm
-#RUN apt-get install -y doxygen graphviz libjson-perl
-#  - antora (npm needed)
-#RUN curl -sL https://deb.nodesource.com/setup_20.x | bash -
-#RUN apt-get install -y nodejs
-#RUN npm i -g @antora/cli@3.1.7 @antora/site-generator-default@3.1.7
-#  - pandoc
-#WORKDIR /tmp
-#RUN curl -OL $(curl -s https://api.github.com/repos/jgm/pandoc/releases/latest | grep "browser_download_url.*deb" | cut -d '"' -f 4)
-#RUN apt-get install -y ./pandoc-*.deb
-#  - asciidoctor
-#RUN apt-get install -y ruby-dev
-#RUN gem install asciidoctor
-
-#
 #  Setup a src dir in /usr/local
 #
 RUN mkdir -p /usr/local/src/repositories
@@ -100,6 +82,11 @@ RUN ./configure \
       --sbindir=/usr/sbin \
  && make -j"$(nproc)" \
  && make install
+
+# Generate EAP/PEAP certs
+RUN if [ ! -f /etc/raddb/certs/rsa/server.pem ]; then \
+    cd /etc/raddb/certs && make; \
+    fi
 
 #
 # Create docker-entrypoint.sh script

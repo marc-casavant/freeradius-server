@@ -31,7 +31,7 @@
 #  section titled DEBUGGING.  It outlines a method where you can
 #  quickly obtain the configuration you want, without running into
 #  trouble. And finally, the debug output can be complex. Please read
-#  https://wiki.freeradius.org/radiusd-X[debugging] to understand that output.
+#  https://www.freeradius.org/documentation/freeradius-server/4.0.0/debugging/radiusd_X.html
 #
 #  The best way to configure the server for your local system is to
 #  *carefully* edit this file.  Most attempts to make large edits to
@@ -121,6 +121,13 @@ server default {
 				#
 #				max = 4096
 
+
+				#
+				#  max_rounds:: The maximum number of message exchanges
+				#  before the server gives up
+				#
+#				max_rounds = 40
+
 				#
 				#  timeout:: How long to wait before expiring a
 				#  session.
@@ -132,6 +139,31 @@ server default {
 				#  state value is received.
 				#
 #				timeout = 15
+
+				#
+				#  dedup_key:: Key to enforce only one active session per
+				#  supplicant.
+				#
+				#  Some supplicants may misbehave by starting many thousands
+				#  of EAP sessions, but never finishing them.  These sessions
+				#  can cause the server to hit 'max_sessions' very quickly.
+				#  The 'timer_expire' configuration above does not help as
+				#  much as it could, because the old (duplicate) session
+				#  should be deleted as soon as the new one comes in.
+				#
+				#  If you set the 'dedup_key' below, whenever the EAP module
+				#  starts a new session, it will check for a previous session
+				#  which has the same dedup key.  If a previous session
+				#  is found, it is deleted.
+				#
+				#  Setting this configuration item may cause issues if the
+				#  same device uses multiple EAP sessions at the same time.
+				#  But that device behavior should be rare to non-existent.
+				#
+				#  The configuration item is commented out so that upgrades
+				#  do not change existing behavior.
+				#
+#				dedup_key = Calling-Station-Id
 			}
 		}
 
@@ -850,9 +882,7 @@ recv Access-Request {
 
 	#
 	#  Look in an SQL database. The schema of the database is
-	#  meant to mirror the `users` file.  For a full description
-	#  of the module behavior, please see
-	#  https://wiki.freeradius.org/modules/Rlm_sql
+	#  meant to mirror the `users` file.
 	#
 	-sql
 
@@ -866,9 +896,6 @@ recv Access-Request {
 	#
 	#  The `ldap` module reads passwords and other attributes from
 	#  an LDAP database.
-	#
-	#  For a full description of the module behavior, please see
-	#  https://wiki.freeradius.org/modules/Rlm_ldap
 	#
 	-ldap
 
@@ -930,7 +957,7 @@ recv Status-Server {
 #
 #  Since version 4, proxying also happens in this section.  For more
 #  information on how proxying has changed in version 4, please see
-#  https://wiki.freeradius.org/upgrading/version4/proxy.
+#  https://www.freeradius.org/documentation/freeradius-server/4.0.0/howto/upgrade/proxy.html
 #
 #  For authentication, you should generally NOT set the `Auth-Type`
 #  attribute.  As noted above, the modules will usually figure it what
@@ -1060,7 +1087,7 @@ authenticate eap {
 #    * note that this won't work for EAP.
 #
 #  For more information, see:
-#  https://wiki.freeradius.org/upgrading/version4/proxy.
+#  https://www.freeradius.org/documentation/freeradius-server/4.0.0/howto/upgrade/proxy.html
 #
 
 #
@@ -1518,38 +1545,24 @@ send Accounting-Response {
 }
 
 #
-#  ## Timeouts
+#  ## Finally
 #
-#  A virtual server can have a `catch timeout` section.  The format and
-#  contents are the same as the normal `catch timeout`.
+#  If a `finally` section is defined, then all packets will be processed
+#  through it.
 #
-#  This section limits the total processing time for a request.  The
-#  values given here should be less than `request.timeout`.
+#  This includes packets whose processing has been stopped due to reaching
+#  `request.timeout`.  Such packets can be detected by testing for the
+#  `timeout` rcode.
 #
-#  When a request reaches `request.timeout`, it is forcibly stopped.
-#  No further processing takes place.
+#  The `finally` section can be used as a common logging section for
+#  all packets, allowing their final state to be captured.
 #
-#  When a request reaches the time specified in this `timeout` section,
-#  all normal processing is stopped.  The `timeout` section is then run.
-#
-#  This configuration allows the server to take action when a request
-#  is taking too long.  For example, it could write a failure message
-#  to a log file.
-#
-#  The `timeout` section can contain any `unlang` keyword, including
-#  `call`, and other `timeout` sections.  If you need to have a
-#  "timeout for the timeout", then just add anoither `timeout` section
-#  inside of this one.
-#
-#  Note that `request.timeout` still applies.  So the timeout value
-#  given here should be less than the value given by
-#  `request.timeout`.
-#
-#
-
-#	catch timeout {
-#		do_logging_here
-#		...
+#finally {
+#	if (timeout) {
+#		logging relating to timeouts
+#		return
 #	}
-
+#
+#	normal packet logging
+#}
 }

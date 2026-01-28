@@ -12,7 +12,7 @@ The following entry denies access to one specific user. Note that it MUST be put
 	foo Auth-Type := Reject
 		Reply-Message = "foo is not allowed to dial-in"
 
-The following entry denies access to a group of users. The same restrictions as above on location in the raddb/users file also apply:
+The following entry denies access to a group of users. The same restrictions as above on location in the `users` file also apply:
 
 	DEFAULT Group == "disabled", Auth-Type := Reject
 		Reply-Message = "Your account has been disabled"
@@ -25,7 +25,7 @@ This method is used to prevent a user from logging in multiple times across mult
 .Troubleshooting Checklist
 [%collapsible]
 ====
-1. Check that you added your NAS to `raddb/clients.conf` and selected the correct NAS type. Verify the the password.
+1. Check that you added your NAS to `clients.conf` and selected the correct NAS type. Verify the the password.
 2. Run `radiusd -X` and see if it parses the Simultaneous-Use line.
 3. Try to run `checkrad` manually; maybe you may have a wrong version of perl, don't have cmu-snmp installed etc.
 4. Check the database.  If it says no one is logged in, Simultaneous-Use *won't* work.
@@ -33,3 +33,6 @@ This method is used to prevent a user from logging in multiple times across mult
 6. Verify that the accounting packets are accepted by the database module. If the module returns "noop", it means that the accounting packets do not have enough information for the server to perform Simultaneous-Use enforcement.
 7. In case you have SQL as a database, and you have accounting records in radacct table, you'll need to uncomment sql in session section of radiusd.conf file. Also, you'll need to uncomment Simutaneus check query in sql.conf file.
 ====
+
+// Copyright (C) 2026 Network RADIUS SAS.  Licenced under CC-by-NC 4.0.
+// This documentation was developed by Network RADIUS SAS.

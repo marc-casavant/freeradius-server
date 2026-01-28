@@ -128,16 +128,18 @@ done:
 }
 
 
-static void xlat_debug_attr_vp(request_t *request, fr_pair_t const *vp);
+static void xlat_debug_attr_vp(request_t *request, fr_pair_t const *vp,
+			       fr_dict_attr_t const *da);
 
-static void xlat_debug_attr_list(request_t *request, fr_pair_list_t const *list)
+static void xlat_debug_attr_list(request_t *request, fr_pair_list_t const *list,
+				 fr_dict_attr_t const *parent)
 {
 	fr_pair_t *vp;
 
 	for (vp = fr_pair_list_next(list, NULL);
 	     vp != NULL;
 	     vp = fr_pair_list_next(list, vp)) {
-		xlat_debug_attr_vp(request, vp);
+		xlat_debug_attr_vp(request, vp, parent);
 	}
 }
 
@@ -147,7 +149,8 @@ static xlat_arg_parser_t const xlat_pair_cursor_args[] = {
 	XLAT_ARG_PARSER_TERMINATOR
 };
 
-static void xlat_debug_attr_vp(request_t *request, fr_pair_t const *vp)
+static void xlat_debug_attr_vp(request_t *request, fr_pair_t const *vp,
+			       fr_dict_attr_t const *parent)
 {
 	fr_dict_vendor_t const		*vendor;
 	fr_table_num_ordered_t const	*type;
@@ -162,7 +165,7 @@ static void xlat_debug_attr_vp(request_t *request, fr_pair_t const *vp)
 	 *	Squash the names down if necessary.
 	 */
 	if (!RDEBUG_ENABLED3) {
-		slen = fr_pair_print_name(&sbuff, NULL, &vp);
+		slen = fr_pair_print_name(&sbuff, parent, &vp);
 	} else {
 		slen = fr_sbuff_in_sprintf(&sbuff, "%s %s ", vp->da->name, fr_tokens[vp->op]);
 	}
@@ -172,7 +175,7 @@ static void xlat_debug_attr_vp(request_t *request, fr_pair_t const *vp)
 	case FR_TYPE_STRUCTURAL:
 		RIDEBUG2("%s{", buffer);
 		RINDENT();
-		xlat_debug_attr_list(request, &vp->vp_group);
+		xlat_debug_attr_list(request, &vp->vp_group, vp->da);
 		REXDENT();
 		RIDEBUG2("}");
 		break;
@@ -303,7 +306,7 @@ static xlat_action_t xlat_func_pairs_debug(UNUSED TALLOC_CTX *ctx, UNUSED fr_dcu
 	for (vp = fr_dcursor_current(cursor);
 	     vp;
 	     vp = fr_dcursor_next(cursor)) {
-		xlat_debug_attr_vp(request, vp);
+		xlat_debug_attr_vp(request, vp, NULL);
 	}
 	REXDENT();
 
@@ -1966,6 +1969,45 @@ static xlat_action_t xlat_func_bin(TALLOC_CTX *ctx, fr_dcursor_t *out,
 		fr_value_box_safety_copy_changed(result, hex);
 		fr_dcursor_append(out, result);
 	}
+
+	return XLAT_ACTION_DONE;
+}
+
+static xlat_arg_parser_t const xlat_func_block_args[] = {
+	{ .required = true, .single = true, .type = FR_TYPE_TIME_DELTA },
+	XLAT_ARG_PARSER_TERMINATOR
+};
+
+/** Block for the specified duration
+ *
+ * This is for developer use only to simulate blocking, synchronous I/O.
+ * For normal use, use the %delay() xlat instead.
+ *
+ * Example:
+@verbatim
+%block(1s)
+@endverbatim
+ *
+ * @ingroup xlat_functions
+ */
+static xlat_action_t xlat_func_block(TALLOC_CTX *ctx, fr_dcursor_t *out,
+				     UNUSED xlat_ctx_t const *xctx,
+				     UNUSED request_t *request, fr_value_box_list_t *args)
+{
+	fr_value_box_t		*delay;
+	fr_value_box_t		*vb;
+	struct timespec		ts_in, ts_remain = {};
+
+	XLAT_ARGS(args, &delay);
+
+	ts_in = fr_time_delta_to_timespec(delay->vb_time_delta);
+
+	(void)nanosleep(&ts_in, &ts_remain);
+
+	MEM(vb = fr_value_box_alloc(ctx, FR_TYPE_TIME_DELTA, NULL));
+	vb->vb_time_delta = fr_time_delta_sub(delay->vb_time_delta,
+					      fr_time_delta_from_timespec(&ts_remain));
+	fr_dcursor_append(out, vb);
 
 	return XLAT_ACTION_DONE;
 }
@@ -4706,6 +4748,7 @@ do { \
 	xlat_func_flags_set(xlat, XLAT_FUNC_FLAG_INTERNAL); \
 } while (0)
 
+	XLAT_REGISTER_ARGS("block", xlat_func_block, FR_TYPE_TIME_DELTA, xlat_func_block_args);
 	XLAT_REGISTER_ARGS("debug", xlat_func_debug, FR_TYPE_INT8, xlat_func_debug_args);
 	XLAT_REGISTER_ARGS("debug_attr", xlat_func_pairs_debug, FR_TYPE_NULL, xlat_pair_cursor_args);
 	XLAT_NEW("pairs.debug");

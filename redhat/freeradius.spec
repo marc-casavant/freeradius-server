@@ -804,7 +804,7 @@ touch $RPM_BUILD_ROOT/var/log/radius/radius.log
 %__rm -f $RPM_BUILD_ROOT/%{_sysconfdir}/raddb/experimental.conf
 
 # install doc files omitted by standard install
-for f in COPYRIGHT CREDITS; do
+for f in COPYRIGHT ; do
     %__cp $f $RPM_BUILD_ROOT/%{docdir}
 done
 %__cp LICENSE $RPM_BUILD_ROOT/%{docdir}/LICENSE.gpl
@@ -813,13 +813,10 @@ done
 # add Red Hat specific documentation
 %__cat >> $RPM_BUILD_ROOT/%{docdir}/REDHAT << EOF
 
-Red Hat, RHEL, Fedora, and CentOS specific information can be found on the
-FreeRADIUS Wiki in the Red Hat FAQ.
+Red Hat, RHEL, Fedora, and CentOS specific information can be found
+online in the FreeRADIUS documentation:
 
-http://wiki.freeradius.org/guide/Red_Hat_FAQ
-
-Please reference that document.
-
+https://www.freeradius.org/documentation/freeradius-server/4.0.0/howto/installation/redhat.html
 EOF
 
 # Install the selinux module
@@ -949,7 +946,6 @@ fi
 %{_libdir}/freeradius/process_radius.so
 %{_libdir}/freeradius/process_tacacs.so
 %{_libdir}/freeradius/process_tls.so
-%{_libdir}/freeradius/process_ttls.so
 %{_libdir}/freeradius/process_vmps.so
 
 # Proto modules without external deps
@@ -1014,6 +1010,7 @@ fi
 %{_libdir}/freeradius/rlm_exec.so
 %{_libdir}/freeradius/rlm_files.so
 %{_libdir}/freeradius/rlm_icmp.so
+%{_libdir}/freeradius/rlm_interval.so
 %{_libdir}/freeradius/rlm_isc_dhcp.so
 %{_libdir}/freeradius/rlm_kv.so
 %{_libdir}/freeradius/rlm_linelog.so
@@ -1319,7 +1316,6 @@ fi
 %files unbound
 %defattr(-,root,root)
 %{_libdir}/freeradius/rlm_unbound.so
-%doc %{_mandir}/man5/rlm_unbound.5.gz
 %endif
 
 %if %{with rlm_sigtran}

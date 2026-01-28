@@ -2,7 +2,7 @@
 = Attributes
 
 Much of the information in this section is also in the
-`raddb/dictionary` file
+`dictionary` file
 
 All of the attributes have been renamed from v3.  This change was
 necessary in order to support new functionality in v4.  The
@@ -78,3 +78,6 @@ Many lists have been removed.  e.g._`proxy`, `proxy-reply`, `coa`,
 `coa-reply`, `disconnect`, and `disconnect-reply`.  The underlying
 functionality still exists, but it has been moved to different
 keywords, such as `subrequest`.
+
+// Copyright (C) 2026 Network RADIUS SAS.  Licenced under CC-by-NC 4.0.
+// This documentation was developed by Network RADIUS SAS.

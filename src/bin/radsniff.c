@@ -2274,7 +2274,7 @@ static NEVER_RETURNS void usage(int status)
 	fprintf(output, "  -a                    List all interfaces available for capture.\n");
 	fprintf(output, "  -c <count>            Number of packets to capture.\n");
 	fprintf(output, "  -C <checksum_type>    Enable checksum validation. (Specify 'udp' or 'radius')\n");
-	fprintf(output, "  -d <raddb>            Set configuration directory (defaults to " RADDBDIR ").\n");
+	fprintf(output, "  -d <confdir>          Set configuration directory (defaults to " CONFDIR ").\n");
 	fprintf(output, "  -D <dictdir>          Set main dictionary directory (defaults to " DICTDIR ").\n");
 	fprintf(output, "  -e <event>[,<event>]  Only log requests with these event flags.\n");
 	fprintf(output, "                        Event may be one of the following:\n");
@@ -2335,7 +2335,7 @@ int main(int argc, char *argv[])
 	int			c;
 	unsigned int		timeout = 0;
 	fr_timer_t		*timeout_ev = NULL;
-	char const		*raddb_dir = RADDBDIR;
+	char const		*confdir = CONFDIR;
 	char const		*dict_dir = DICTDIR;
 	TALLOC_CTX		*autofree;
 
@@ -2445,7 +2445,7 @@ int main(int argc, char *argv[])
 			break;
 
 		case 'd':
-			raddb_dir = optarg;
+			confdir = optarg;
 			break;
 
 		case 'D':
@@ -2733,7 +2733,7 @@ int main(int argc, char *argv[])
 		goto finish;
 	}
 
-	if (fr_dict_read(fr_dict_unconst(dict_freeradius), raddb_dir, FR_DICTIONARY_FILE) == -1) {
+	if (fr_dict_read(fr_dict_unconst(dict_freeradius), confdir, FR_DICTIONARY_FILE) == -1) {
 		fr_perror("radsniff");
 		ret = 64;
 		goto finish;

@@ -20,19 +20,7 @@ mibdir		= @mibdir@
 logdir		= @logdir@
 includedir	= @includedir@
 
-#
-#  In some systems, we don't want to over-write ANY configuration.
-#  So we do:
-#
-#	$./configure
-#	$ make
-#	$ make -Draddbdir=/tmp/garbage install
-#
-#  and all of the configuration files go into /tmp/garbage
-#
-ifeq "${raddbdir}" ""
 raddbdir	= @raddbdir@
-endif
 modconfdir	= @modconfdir@
 radacctdir	= @radacctdir@
 top_builddir	= @abs_top_builddir@
@@ -131,7 +119,7 @@ LIBS		= $(OPENSSL_LIBS) $(TALLOC_LIBS) $(KQUEUE_LIBS) @LIBS@
 LDFLAGS		= $(OPENSSL_LDFLAGS) $(TALLOC_LDFLAGS) $(KQUEUE_LDFLAGS) @LDFLAGS@
 
 LOGDIR		= ${logdir}
-RADDBDIR	= ${raddbdir}
+CONFDIR	= ${raddbdir}
 RUNDIR		= ${localstatedir}/run/radiusd
 SBINDIR		= ${sbindir}
 RADIR		= ${radacctdir}

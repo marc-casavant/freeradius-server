@@ -80,7 +80,7 @@ typedef struct {
 	fr_dict_attr_t const	*snmp_op;		//!< SNMP operation.
 	fr_dict_attr_t const	*snmp_type;		//!< SNMP type attribute.
 	fr_dict_attr_t const	*snmp_failure;		//!< SNMP set error attribute.
-	char const		*raddb_dir;		//!< Radius dictionary directory.
+	char const		*confdir;		//!< Radius dictionary directory.
 	char const		*dict_dir;		//!< Dictionary director.
 	unsigned int		code;			//!< Request type.
 	int			proto;			//!< Protocol TCP/UDP.
@@ -130,7 +130,7 @@ static NEVER_RETURNS void usage(void)
 	fprintf(stderr, "  <command>              One of auth, acct, status, coa, disconnect or auto.\n");
 	fprintf(stderr, "  -4                     Use IPv4 address of server\n");
 	fprintf(stderr, "  -6                     Use IPv6 address of server.\n");
-	fprintf(stderr, "  -d <raddb>             Set user dictionary directory (defaults to " RADDBDIR ").\n");
+	fprintf(stderr, "  -d <confdir>           Set user dictionary directory (defaults to " CONFDIR ").\n");
 	fprintf(stderr, "  -D <dictdir>           Set main dictionary directory (defaults to " DICTDIR ").\n");
 	fprintf(stderr, "  -h                     Print usage help information.\n");
 	fprintf(stderr, "  -l <file>              Log output to file.\n");
@@ -913,7 +913,7 @@ int main(int argc, char **argv)
 	conf = talloc_zero(autofree, radsnmp_conf_t);
 	conf->proto = IPPROTO_UDP;
 	conf->dict_dir = DICTDIR;
-	conf->raddb_dir = RADDBDIR;
+	conf->confdir = CONFDIR;
 	conf->secret = talloc_strdup(conf, "testing123");
 	conf->timeout = fr_time_delta_from_sec(3);
 	conf->retries = 5;
@@ -945,7 +945,7 @@ int main(int argc, char **argv)
 			break;
 
 		case 'd':
-			conf->raddb_dir = optarg;
+			conf->confdir = optarg;
 			break;
 
 		case 'l':
@@ -1053,7 +1053,7 @@ int main(int argc, char **argv)
 		fr_exit_now(EXIT_FAILURE);
 	}
 
-	if (fr_dict_read(fr_dict_unconst(dict_freeradius), conf->raddb_dir, FR_DICTIONARY_FILE) == -1) {
+	if (fr_dict_read(fr_dict_unconst(dict_freeradius), conf->confdir, FR_DICTIONARY_FILE) == -1) {
 		fr_perror("radsnmp");
 		fr_exit_now(EXIT_FAILURE);
 	}

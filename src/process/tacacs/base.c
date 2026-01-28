@@ -161,16 +161,8 @@ typedef struct {
 } process_tacacs_sections_t;
 
 typedef struct {
-	fr_time_delta_t	session_timeout;	//!< Maximum time between the last response and next request.
-	uint32_t	max_session;		//!< Maximum ongoing session allowed.
-
-	uint32_t	max_rounds;		//!< maximum number of authentication rounds allowed
-
-	uint8_t       	state_server_id;	//!< Sets a specific byte in the state to allow the
-						//!< authenticating server to be identified in packet
-						//!<captures.
-
-	fr_state_tree_t	*state_tree;		//!< State tree to link multiple requests/responses.
+	fr_state_config_t      	session;	//!< track state session information.
+	fr_state_tree_t		*state_tree;	//!< State tree to link multiple requests/responses.
 } process_tacacs_auth_t;
 
 typedef struct {
@@ -187,7 +179,6 @@ typedef struct {
 } process_tacacs_t;
 
 typedef struct {
-	uint32_t       	rounds;			//!< how many rounds were taken
 	uint32_t	reply;			//!< for multiround state machine
 	uint8_t		seq_no;			//!< sequence number of last request.
 	fr_pair_list_t	list;			//!< copied from the request
@@ -203,17 +194,8 @@ typedef struct {
 
 #include <freeradius-devel/server/process.h>
 
-static const conf_parser_t session_config[] = {
-	{ FR_CONF_OFFSET("timeout", process_tacacs_auth_t, session_timeout), .dflt = "15" },
-	{ FR_CONF_OFFSET("max", process_tacacs_auth_t, max_session), .dflt = "4096" },
-	{ FR_CONF_OFFSET("max_rounds", process_tacacs_auth_t, max_rounds), .dflt = "4" },
-	{ FR_CONF_OFFSET("state_server_id", process_tacacs_auth_t, state_server_id) },
-
-	CONF_PARSER_TERMINATOR
-};
-
 static const conf_parser_t auth_config[] = {
-	{ FR_CONF_POINTER("session", 0, CONF_FLAG_SUBSECTION, NULL), .subcs = (void const *) session_config },
+	{ FR_CONF_POINTER("session", 0, CONF_FLAG_SUBSECTION, NULL), .subcs = (void const *) state_session_config },
 
 	CONF_PARSER_TERMINATOR
 };
@@ -231,14 +213,16 @@ static const conf_parser_t config[] = {
  */
 static int state_create(TALLOC_CTX *ctx, fr_pair_list_t *out, request_t *request, bool reply)
 {
-	uint8_t		buffer[12];
-	uint32_t	hash;
+	uint64_t	hash;
+	uint32_t	sequence;
 	fr_pair_t 	*vp;
+
+	if (!request->async->listen) return -1;
 
 	vp = fr_pair_find_by_da_nested(&request->request_pairs, NULL, attr_tacacs_session_id);
 	if (!vp) return -1;
 
-	fr_nbo_from_uint32(buffer, vp->vp_uint32);
+	hash = fr_hash64(&vp->vp_uint32, sizeof(vp->vp_uint32));
 
 	vp = fr_pair_find_by_da_nested(&request->request_pairs, NULL, attr_tacacs_sequence_number);
 	if (!vp) return -1;
@@ -248,23 +232,15 @@ static int state_create(TALLOC_CTX *ctx, fr_pair_list_t *out, request_t *request
 	 *	So if we want to synthesize a state in a reply which gets matched with the next
 	 *	request, we have to add 2 to it.
 	 */
-	hash = vp->vp_uint8 + ((int) reply << 1);
+	sequence = vp->vp_uint8 + ((int) reply << 1);
+	hash = fr_hash64_update(&sequence, sizeof(sequence), hash);
 
-	fr_nbo_from_uint32(buffer + 4, hash);
-
-	/*
-	 *	Hash in the listener.  For now, we don't allow internally proxied requests.
-	 */
-	fr_assert(request->async != NULL);
-	fr_assert(request->async->listen != NULL);
-	hash = fr_hash(&request->async->listen, sizeof(request->async->listen));
-
-	fr_nbo_from_uint32(buffer + 8, hash);
+	hash = fr_hash64_update(&request->async->listen, sizeof(request->async->listen), hash);
 
 	vp = fr_pair_afrom_da(ctx, attr_tacacs_state);
 	if (!vp) return -1;
 
-	(void) fr_pair_value_memdup(vp, buffer, 12, false);
+	(void) fr_pair_value_memdup(vp, (uint8_t const *) &hash, sizeof(hash), false);
 
 	fr_pair_append(out, vp);
 
@@ -723,13 +699,6 @@ RESUME(auth_get)
 		REXDENT();
 
 	} else {
-		session->rounds++;
-
-		if (session->rounds > inst->auth.max_rounds) {
-			REDEBUG("Too many rounds of authentication - failing the session");
-			return CALL_SEND_TYPE(FR_TACACS_CODE_AUTH_FAIL);
-		}
-
 		/*
 		 *	It is possible that the user name or password are added on subsequent Authentication-Continue
 		 *	packets following replies with Authentication-GetUser or Authentication-GetPass.
@@ -755,7 +724,7 @@ send_reply:
 	 *	Cache the session state context.
 	 */
 	if ((state_create(request->reply_ctx, &request->reply_pairs, request, true) < 0) ||
-	    (fr_request_to_state(inst->auth.state_tree, request) < 0)) {
+	    (fr_state_store(inst->auth.state_tree, request) < 0)) {
 		return CALL_SEND_TYPE(FR_TACACS_CODE_AUTH_ERROR);
 	}
 
@@ -768,7 +737,7 @@ RECV(auth_cont)
 	process_tacacs_session_t	*session;
 
 	if ((state_create(request->request_ctx, &request->request_pairs, request, false) < 0) ||
-	    (fr_state_to_request(inst->auth.state_tree, request) < 0)) {
+	    (fr_state_restore(inst->auth.state_tree, request) < 0)) {
 		return CALL_SEND_TYPE(FR_TACACS_CODE_AUTH_ERROR);
 	}
 
@@ -835,7 +804,7 @@ RECV(auth_cont_abort)
 	process_tacacs_t const		*inst = talloc_get_type_abort_const(mctx->mi->data, process_tacacs_t);
 
 	if ((state_create(request->request_ctx, &request->request_pairs, request, false) < 0) ||
-	    (fr_state_to_request(inst->auth.state_tree, request) < 0)) {
+	    (fr_state_restore(inst->auth.state_tree, request) < 0)) {
 		return CALL_SEND_TYPE(FR_TACACS_CODE_AUTH_ERROR);
 	}
 
@@ -1071,15 +1040,16 @@ static int mod_instantiate(module_inst_ctx_t const *mctx)
 
 	inst->server_cs = cf_item_to_section(cf_parent(mctx->mi->conf));
 
-	FR_INTEGER_BOUND_CHECK("session.max_rounds", inst->auth.max_rounds, >=, 1);
-	FR_INTEGER_BOUND_CHECK("session.max_rounds", inst->auth.max_rounds, <=, 8);
+	FR_INTEGER_BOUND_CHECK("session.max_rounds", inst->auth.session.max_rounds, >=, 1);
+	FR_INTEGER_BOUND_CHECK("session.max_rounds", inst->auth.session.max_rounds, <=, 8);
 
-	FR_INTEGER_BOUND_CHECK("session.max", inst->auth.max_session, >=, 64);
-	FR_INTEGER_BOUND_CHECK("session.max", inst->auth.max_session, <=, (1 << 18));
+	FR_INTEGER_BOUND_CHECK("session.max", inst->auth.session.max_sessions, >=, 64);
+	FR_INTEGER_BOUND_CHECK("session.max", inst->auth.session.max_sessions, <=, (1 << 18));
 
-	inst->auth.state_tree = fr_state_tree_init(inst, attr_tacacs_state, main_config->spawn_workers, inst->auth.max_session,
-						   inst->auth.session_timeout, inst->auth.state_server_id,
-						   fr_hash_string(cf_section_name2(inst->server_cs)));
+	inst->auth.session.thread_safe = main_config->spawn_workers;
+	inst->auth.session.context_id = fr_hash_string(cf_section_name2(inst->server_cs));
+
+	inst->auth.state_tree = fr_state_tree_init(inst, attr_tacacs_state, &inst->auth.session);
 	return 0;
 }
 

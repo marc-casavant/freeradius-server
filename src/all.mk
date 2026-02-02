@@ -14,6 +14,7 @@ SUBMAKEFILES := include/all.mk \
 #  The default is to just build the source code.  We skip running the
 #  test framework if it's not necessary.
 #
-ifneq "$(findstring test,$(MAKECMDGOALS))$(findstring clean,$(MAKECMDGOALS))" ""
-SUBMAKEFILES +=	tests/all.mk
+ifneq ("$(findstring test,$(MAKECMDGOALS))$(findstring clean,$(MAKECMDGOALS))","")
+SUBMAKEFILES += tests/all.mk
+SUBMAKEFILES += tests/multi-server/all.mk
 endif

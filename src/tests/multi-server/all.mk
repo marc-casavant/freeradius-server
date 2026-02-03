@@ -10,12 +10,33 @@
 # The compose file is selected by stripping "test-" prefix and adding "env-" prefix.
 # The same compose file is used for all testcase variants (e.g. test-5hs-autoaccept-5min, test-5hs-autoaccept-variant3).
 
+# Find ENV compose file by stripping trailing "-suffix" chunks until a match exists.
+# Returns: environments/docker-compose/env-<base-without-test->.yml
+define FIND_ENV_COMPOSE
+$(strip $(shell \
+  name='$(1)'; base="$$name"; \
+  while :; do \
+    env="environments/docker-compose/env-$${base#test-}.yml"; \
+    if [ -f "$(ALL_MK_DIR)$$env" ]; then \
+      printf '%s' "$$env"; exit 0; \
+    fi; \
+    newbase="$${base%-*}"; \
+    if [ "$$newbase" = "$$base" ]; then \
+      echo "ERROR: No matching env compose file for $(1) (tried $$env and shorter prefixes)" 1>&2; \
+      exit 1; \
+    fi; \
+    base="$$newbase"; \
+  done))
+endef
+
 define MAKE_TEST_TARGET
 .PHONY: $(1)
-$(1): TEST_FILENAME  := $(1).yml
-$(1): TEST_NAME := $(1)
 
-$(1): ENV_COMPOSE_PATH = environments/docker-compose/$$(patsubst test-%,env-%,$$(basename $$(TEST_FILENAME))).yml
+$(1): TEST_NAME     := $(1)
+$(1): TEST_FILENAME := $$(TEST_NAME).yml
+
+# Compute compose path by finding the longest matching base env file
+$(1): ENV_COMPOSE_PATH := $$(call FIND_ENV_COMPOSE,$$(TEST_NAME))
 
 $(1): clone
 	@echo "BUILD_DIR=$(BUILD_DIR)"
@@ -28,8 +49,8 @@ $(1): clone
 		echo "DEBUG: TEST_NAME=$$(TEST_NAME)" && \
 		echo "DEBUG: ENV_COMPOSE_PATH=$$(ENV_COMPOSE_PATH)" && \
 		echo "DEBUG: ALL_MK_DIR=$(ALL_MK_DIR)" && \
-			test -f "$(ALL_MK_DIR)$$(ENV_COMPOSE_PATH)" || { \
-				echo "ERROR: Missing compose file: $(ALL_MK_DIR)$$(ENV_COMPOSE_PATH)"; \
+		test -f "$(ALL_MK_DIR)$$(ENV_COMPOSE_PATH)" || { \
+			echo "ERROR: Missing compose file: $(ALL_MK_DIR)$$(ENV_COMPOSE_PATH)"; \
 			exit 1; \
 		} && \
 		DATA_PATH="$(ALL_MK_DIR)environments/configs"; \

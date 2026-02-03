@@ -1,14 +1,30 @@
 #
 # all.mk for multi-server tests
 #
-# Create one make target per test YAML:
+# Test targets map to a test YAML of the same name, and to a Docker Compose "env" YAML.
 #
-# For example:
-#   test-5hs-autoaccept   -> uses test-5hs-autoaccept.yml
-#   and compose becomes   -> environments/docker-compose/env-5hs-autoaccept.yml
+# Examples:
+#   make test-5hs-autoaccept
+#     -> TEST_FILENAME     = test-5hs-autoaccept.yml
+#     -> ENV_COMPOSE_PATH  = environments/docker-compose/env-5hs-autoaccept.yml
 #
-# The compose file is selected by stripping "test-" prefix and adding "env-" prefix.
-# The same compose file is used for all testcase variants (e.g. test-5hs-autoaccept-5min, test-5hs-autoaccept-variant3).
+#   make test-5hs-autoaccept-5min
+#     -> TEST_FILENAME     = test-5hs-autoaccept-5min.yml
+#     -> ENV_COMPOSE_PATH  = environments/docker-compose/env-5hs-autoaccept.yml
+#
+#   make test-2p-2p-4hs-sql-mycustomvariantstring
+#     -> TEST_FILENAME     = test-2p-2p-4hs-sql-mycustomvariantstring.yml
+#     -> ENV_COMPOSE_PATH  = environments/docker-compose/env-2p-2p-4hs-sql.yml
+#
+# Compose env selection rule:
+#   - Start with the full test target name (TEST_NAME).
+#   - Convert "test-..." to "environments/docker-compose/env-....yml".
+#   - If that env file does not exist, strip the last "-suffix" segment and try again,
+#     repeating until a matching env file is found.
+#
+# This lets you create any number of variant tests (e.g. -5min, -variant3, -foo-bar-baz)
+# that reuse the same base compose environment, while still keeping a unique test YAML
+# per variant.
 
 # Find ENV compose file by stripping trailing "-suffix" chunks until a match exists.
 # Returns: environments/docker-compose/env-<base-without-test->.yml
@@ -17,7 +33,7 @@ $(strip $(shell \
   name='$(1)'; base="$$name"; \
   while :; do \
     env="environments/docker-compose/env-$${base#test-}.yml"; \
-    if [ -f "$(ALL_MK_DIR)$$env" ]; then \
+    if [ -f "$(MULTI_SERVER_TESTS_BASE_DIR_ABS_PATH)$$env" ]; then \
       printf '%s' "$$env"; exit 0; \
     fi; \
     newbase="$${base%-*}"; \
@@ -39,46 +55,49 @@ $(1): TEST_FILENAME := $$(TEST_NAME).yml
 $(1): ENV_COMPOSE_PATH := $$(call FIND_ENV_COMPOSE,$$(TEST_NAME))
 
 $(1): clone
-	@echo "BUILD_DIR=$(BUILD_DIR)"
-	@echo "MULTI_SERVER_DIR=$(MULTI_SERVER_DIR)"
-	@mkdir -p "$(MULTI_SERVER_DIR)/freeradius-listener-logs/$$(TEST_NAME)"
+	@echo "MULTI_SERVER_BUILD_DIR_REL_PATH=$(MULTI_SERVER_BUILD_DIR_REL_PATH)"
+	@echo "MULTI_SERVER_BUILD_DIR_ABS_PATH=$(MULTI_SERVER_BUILD_DIR_ABS_PATH)"
+	@mkdir -p "$(MULTI_SERVER_BUILD_DIR_REL_PATH)/freeradius-listener-logs/$$(TEST_NAME)"
 	@cd "$(FRAMEWORK_REPO_DIR)" && \
 		$(MAKE) configure && \
 		. ".venv/bin/activate" && \
 		echo "DEBUG: TEST_FILENAME=$$(TEST_FILENAME)" && \
 		echo "DEBUG: TEST_NAME=$$(TEST_NAME)" && \
 		echo "DEBUG: ENV_COMPOSE_PATH=$$(ENV_COMPOSE_PATH)" && \
-		echo "DEBUG: ALL_MK_DIR=$(ALL_MK_DIR)" && \
-		test -f "$(ALL_MK_DIR)$$(ENV_COMPOSE_PATH)" || { \
-			echo "ERROR: Missing compose file: $(ALL_MK_DIR)$$(ENV_COMPOSE_PATH)"; \
+		echo "DEBUG: MULTI_SERVER_TESTS_BASE_DIR_ABS_PATH=$(MULTI_SERVER_TESTS_BASE_DIR_ABS_PATH)" && \
+		test -f "$(MULTI_SERVER_TESTS_BASE_DIR_ABS_PATH)$$(ENV_COMPOSE_PATH)" || { \
+			echo "ERROR: Missing compose file: $(MULTI_SERVER_TESTS_BASE_DIR_ABS_PATH)$$(ENV_COMPOSE_PATH)"; \
 			exit 1; \
 		} && \
-		DATA_PATH="$(ALL_MK_DIR)environments/configs"; \
-		LISTENER_DIR="$(ALL_MK_DIR)$(MULTI_SERVER_DIR)/freeradius-listener-logs/$$(TEST_NAME)"; \
+		DATA_PATH="$(MULTI_SERVER_TESTS_BASE_DIR_ABS_PATH)environments/configs"; \
+		LISTENER_DIR="$(MULTI_SERVER_BUILD_DIR_ABS_PATH)/freeradius-listener-logs/$$(TEST_NAME)"; \
 		echo "DEBUG: DATA_PATH=$$$$DATA_PATH"; \
+		echo "DEBUG: MULTI_SERVER_BUILD_DIR_REL_PATH=$(MULTI_SERVER_BUILD_DIR_REL_PATH)"; \
 		echo "DEBUG: LISTENER_DIR=$$$$LISTENER_DIR"; \
-		CMD="DATA_PATH=$(ALL_MK_DIR)environments/configs make test-framework -- -x -v --compose $(ALL_MK_DIR)$$(ENV_COMPOSE_PATH) --test $(ALL_MK_DIR)$$(TEST_FILENAME) --use-files --listener-dir $$$$LISTENER_DIR"; \
+		CMD="DATA_PATH=$(MULTI_SERVER_TESTS_BASE_DIR_ABS_PATH)environments/configs make test-framework -- -x -v --compose $(MULTI_SERVER_TESTS_BASE_DIR_ABS_PATH)$$(ENV_COMPOSE_PATH) --test $(MULTI_SERVER_TESTS_BASE_DIR_ABS_PATH)$$(TEST_FILENAME) --use-files --listener-dir $$$$LISTENER_DIR"; \
 		echo "DEBUG: CMD = $$$$CMD"; \
 		bash -c "$$$$CMD"
 endef
 
-# Set directory name where all.mk is located. Help with relative paths.
-ALL_MK_DIR := $(dir $(abspath $(lastword $(MAKEFILE_LIST))))
+# Set directory name where all.mk is located. Help with relative paths
+MULTI_SERVER_TESTS_BASE_DIR_ABS_PATH := $(dir $(abspath $(lastword $(MAKEFILE_LIST))))
 
-# Where we keep build-side artifacts for this test suite
-MULTI_SERVER_DIR := $(BUILD_DIR)/tests/multi-server
-VENV_DIR := $(MULTI_SERVER_DIR)/.venv
+FREERADIUS_SERVER_BUILD_DIR_REL_PATH := $(BUILD_DIR)
 
-# Clone a repo into $(BUILD_DIR)/tests/multi-server/
+# Where we keep build-side artifacts for test-framework
+MULTI_SERVER_BUILD_DIR_REL_PATH := $(FREERADIUS_SERVER_BUILD_DIR_REL_PATH)/tests/multi-server
+MULTI_SERVER_BUILD_DIR_ABS_PATH := $(abspath $(MULTI_SERVER_BUILD_DIR_REL_PATH))
+VENV_DIR := $(MULTI_SERVER_BUILD_DIR_REL_PATH)/.venv
+
 FRAMEWORK_GIT_URL  ?= https://github.com/InkbridgeNetworks/freeradius-multi-server.git
-FRAMEWORK_REPO_DIR ?= $(MULTI_SERVER_DIR)/freeradius-multi-server
+FRAMEWORK_REPO_DIR ?= $(MULTI_SERVER_BUILD_DIR_REL_PATH)/freeradius-multi-server
 
 CLONE_STAMP := $(FRAMEWORK_REPO_DIR)/.git/HEAD
 
 .PHONY: clone
 clone: $(CLONE_STAMP)
 
-$(CLONE_STAMP): | $(MULTI_SERVER_DIR)
+$(CLONE_STAMP): | $(MULTI_SERVER_BUILD_DIR_REL_PATH)
 	@if [ -d "$(FRAMEWORK_REPO_DIR)/.git" ]; then \
 		echo "Repo already cloned: $(FRAMEWORK_REPO_DIR)"; \
 	else \
@@ -91,7 +110,7 @@ $(CLONE_STAMP): | $(MULTI_SERVER_DIR)
 TEST_FILENAME ?=
 
 # Discover available tests (files like test-*.yml in this directory)
-TEST_YMLS  := $(notdir $(wildcard $(ALL_MK_DIR)test-*.yml))
+TEST_YMLS  := $(notdir $(wildcard $(MULTI_SERVER_TESTS_BASE_DIR_ABS_PATH)test-*.yml))
 TEST_NAMES := $(basename $(TEST_YMLS))
 
 # Instantiate dynamic test targets for each discovered test YAML
@@ -103,11 +122,11 @@ endif
 all: $(TEST_NAMES)
 
 # Ensure the target directory exists
-$(MULTI_SERVER_DIR):
+$(MULTI_SERVER_BUILD_DIR_REL_PATH):
 	@mkdir -p "$@"
 
 # Create .venv if it doesn't exist (in the build directory)
-$(VENV_DIR): | $(MULTI_SERVER_DIR)
+$(VENV_DIR): | $(MULTI_SERVER_BUILD_DIR_REL_PATH)
 	python3 -m venv "$(VENV_DIR)"
 
 venv: $(VENV_DIR)

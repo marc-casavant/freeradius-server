@@ -30,19 +30,22 @@
 # Returns: environments/docker-compose/env-<base-without-test->.yml
 define FIND_ENV_COMPOSE
 $(strip $(shell \
-  name='$(1)'; base="$$name"; \
-  while :; do \
-    env="environments/docker-compose/env-$${base#test-}.yml"; \
-    if [ -f "$(MULTI_SERVER_TESTS_BASE_DIR_ABS_PATH)$$env" ]; then \
-      printf '%s' "$$env"; exit 0; \
-    fi; \
-    newbase="$${base%-*}"; \
-    if [ "$$newbase" = "$$base" ]; then \
-      echo "ERROR: No matching env compose file for $(1) (tried $$env and shorter prefixes)" 1>&2; \
-      exit 1; \
-    fi; \
-    base="$$newbase"; \
-  done))
+	name='$(1)'; base="$$name"; \
+	while :; do \
+		env="environments/docker-compose/env-$${base#test-}.yml"; \
+		envj2="$$env.j2"; \
+		if [ -f "$(MULTI_SERVER_TESTS_BASE_DIR_ABS_PATH)$$envj2" ]; then \
+			printf '%s' "$$env"; exit 0; \
+		elif [ -f "$(MULTI_SERVER_TESTS_BASE_DIR_ABS_PATH)$$env" ]; then \
+			printf '%s' "$$env"; exit 0; \
+		fi; \
+		newbase="$${base%-*}"; \
+		if [ "$$newbase" = "$$base" ]; then \
+			echo "ERROR: No matching env compose file for $(1) (tried $$env(.j2) and shorter prefixes)" 1>&2; \
+			exit 1; \
+		fi; \
+		base="$$newbase"; \
+	done))
 endef
 
 define MAKE_TEST_TARGET
@@ -60,29 +63,39 @@ $(1): clone
 	@mkdir -p "$(MULTI_SERVER_BUILD_DIR_REL_PATH)/freeradius-listener-logs/$$(TEST_NAME)"
 	@cd "$(FRAMEWORK_REPO_DIR)" && \
 		git pull && \
+		\
 		$(MAKE) configure && \
 		. ".venv/bin/activate" && \
+		\
 		DATA_PATH="$(MULTI_SERVER_TESTS_BASE_DIR_ABS_PATH)environments/configs"; \
 		LISTENER_DIR="$(MULTI_SERVER_BUILD_DIR_ABS_PATH)/freeradius-listener-logs/$$(TEST_NAME)"; \
-		echo "DEBUG: TEST_FILENAME=$$(TEST_FILENAME)"; \
-		echo "DEBUG: TEST_NAME=$$(TEST_NAME)"; \
-		echo "DEBUG: ENV_COMPOSE_PATH=$$(ENV_COMPOSE_PATH)"; \
-		echo "DEBUG: MULTI_SERVER_TESTS_BASE_DIR_ABS_PATH=$(MULTI_SERVER_TESTS_BASE_DIR_ABS_PATH)"; \
-		echo "DEBUG: DATA_PATH=$$$$DATA_PATH"; \
-		echo "DEBUG: MULTI_SERVER_BUILD_DIR_REL_PATH=$(MULTI_SERVER_BUILD_DIR_REL_PATH)"; \
-		echo "DEBUG: LISTENER_DIR=$$$$LISTENER_DIR"; \
+		\
+		echo "INFO: TEST_FILENAME=$$(TEST_FILENAME)"; \
+		echo "INFO: TEST_NAME=$$(TEST_NAME)"; \
+		echo "INFO: ENV_COMPOSE_PATH=$$(ENV_COMPOSE_PATH)"; \
+		echo "INFO: MULTI_SERVER_TESTS_BASE_DIR_ABS_PATH=$(MULTI_SERVER_TESTS_BASE_DIR_ABS_PATH)"; \
+		echo "INFO: DATA_PATH=$$$$DATA_PATH"; \
+		echo "INFO: MULTI_SERVER_BUILD_DIR_REL_PATH=$(MULTI_SERVER_BUILD_DIR_REL_PATH)"; \
+		echo "INFO: LISTENER_DIR=$$$$LISTENER_DIR"; \
+		\
+		CMD="python3 src/config_builder.py --listener_type file --aux $(MULTI_SERVER_TESTS_BASE_DIR_ABS_PATH)environments/configs/freeradius/homeserver/radiusd.conf.j2 --includepath $(MULTI_SERVER_TESTS_BASE_DIR_ABS_PATH)"; \
+		echo "INFO: CMD = $$$$CMD"; \
+		bash -c "$$$$CMD"; \
+		\
+		CMD="python3 src/config_builder.py --listener_type file --aux $(MULTI_SERVER_TESTS_BASE_DIR_ABS_PATH)environments/configs/freeradius/load-generator/radiusd.conf.j2 --includepath $(MULTI_SERVER_TESTS_BASE_DIR_ABS_PATH)"; \
+		echo "INFO: CMD = $$$$CMD"; \
+		bash -c "$$$$CMD"; \
+		\
+		CMD="python3 src/config_builder.py --listener_type file --aux $(MULTI_SERVER_TESTS_BASE_DIR_ABS_PATH)environments/docker-compose/env-5hs-autoaccept.yml.j2 --includepath $(MULTI_SERVER_TESTS_BASE_DIR_ABS_PATH)"; \
+		echo "INFO: CMD = $$$$CMD"; \
+		bash -c "$$$$CMD"; \
+		\
 		test -f "$(MULTI_SERVER_TESTS_BASE_DIR_ABS_PATH)$$(ENV_COMPOSE_PATH)" || { \
 			echo "ERROR: Missing compose file: $(MULTI_SERVER_TESTS_BASE_DIR_ABS_PATH)$$(ENV_COMPOSE_PATH)"; \
 			exit 1; \
 		} && \
-		CMD="python3 src/config_builder.py --listener_type file --aux $(MULTI_SERVER_TESTS_BASE_DIR_ABS_PATH)environments/configs/freeradius/homeserver/radiusd.conf.j2 --includepath $(MULTI_SERVER_TESTS_BASE_DIR_ABS_PATH)"; \
-		echo "DEBUG: CMD = $$$$CMD"; \
-		bash -c "$$$$CMD"; \
-		CMD="python3 src/config_builder.py --listener_type file --aux $(MULTI_SERVER_TESTS_BASE_DIR_ABS_PATH)environments/configs/freeradius/load-generator/radiusd.conf.j2 --includepath $(MULTI_SERVER_TESTS_BASE_DIR_ABS_PATH)"; \
-		echo "DEBUG: CMD = $$$$CMD"; \
-		bash -c "$$$$CMD"; \
 		CMD="DATA_PATH=$(MULTI_SERVER_TESTS_BASE_DIR_ABS_PATH)environments/configs make test-framework -- -x -v --compose $(MULTI_SERVER_TESTS_BASE_DIR_ABS_PATH)$$(ENV_COMPOSE_PATH) --test $(MULTI_SERVER_TESTS_BASE_DIR_ABS_PATH)$$(TEST_FILENAME) --use-files --listener-dir $$$$LISTENER_DIR"; \
-		echo "DEBUG: CMD = $$$$CMD"; \
+		echo "INFO: CMD = $$$$CMD"; \
 		bash -c "$$$$CMD"
 endef
 

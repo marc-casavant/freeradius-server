@@ -1216,6 +1216,7 @@ static int virtual_server_compile_sections(virtual_server_t *vs, tmpl_rules_t co
 	void				*instance = vs->process_mi->data;
 	CONF_SECTION			*server = vs->server_cs;
 	int				i, found;
+	bool				fail;
 	CONF_SECTION			*subcs = NULL;
 
 	found = 0;
@@ -1228,7 +1229,7 @@ static int virtual_server_compile_sections(virtual_server_t *vs, tmpl_rules_t co
 	 *	definitely want to tell people when running in debug mode.
 	 */
 	if (check_config || DEBUG_ENABLED) {
-		bool fail = false;
+		fail = false;
 
 		while ((subcs = cf_section_next(server, subcs)) != NULL) {
 			char const *name;
@@ -1378,6 +1379,59 @@ static int virtual_server_compile_sections(virtual_server_t *vs, tmpl_rules_t co
 		cf_log_err(server, "The server WILL NOT be able to process packets until the configuration is fixed");
 		return -1;
 	}
+
+	if (!check_config && !DEBUG_ENABLED) return found;
+
+	fail = false;
+
+	/*
+	 *	Check for 'send FOO' and 'recv BAR' which are unused.
+	 */
+	for (subcs = cf_section_first(server);
+	     subcs != NULL;
+	     subcs = cf_section_next(server, subcs)) {
+		char const *name, *name2;
+
+		if (cf_item_is_parsed(subcs)) continue;
+
+		name = cf_section_name1(subcs);
+
+		/*
+		 *	Allow them to "comment out" an entire block by prefixing the name with "-", ala
+		 *	"-sql".
+		 */
+		if (*name == '-') continue;
+
+		/*
+		 *	Local clients are parsed by the listener after the virtual server is bootstrapped.  So
+		 *	we just ignore them here.
+		 */
+		if (strcmp(name, "client") == 0) continue;
+
+		/*
+		 *	When checking the configuration, it is an error to have an unused "send FOO" or "recv
+		 *	BAR" section.
+		 */
+		if (check_config && ((strcmp(name, "recv") == 0) || (strcmp(name, "send") == 0))) {
+			cf_log_err(subcs, "Unused processing section %s ... {", name);
+			cf_log_err(subcs, "If this is intentional, please rename it to '-%s'", name);
+			fail = true;
+			continue;
+		}
+
+		name2 = cf_section_name2(subcs);
+		if (!name2) {
+			cf_log_warn(subcs, "Ignoring %s { - it is unused", name);
+		} else {
+			cf_log_warn(subcs, "Ignoring %s %s { - it is unused", name, name2);
+		}
+	}
+
+	/*
+	 *	Be nice to people, and complaing about ALL unused processing sections.  That way they don't
+	 *	have to run the server many, many, times to see all of the errors.
+	 */
+	if (fail) return -1;
 
 	return found;
 }
@@ -1738,6 +1792,7 @@ static fr_dict_t const *virtual_server_local_dict(CONF_SECTION *server_cs, fr_di
 	 */
 	cf_data_remove(server_cs, fr_dict_t, "dict");
 	cf_data_add(server_cs, dict, "dict", false);
+	cf_item_mark_parsed(cs);
 
 	return dict;
 }

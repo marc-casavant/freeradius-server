@@ -1315,7 +1315,10 @@ CONF_PAIR *cf_pair_dup(CONF_SECTION *parent, CONF_PAIR *cp, bool copy_meta)
 	new = cf_pair_alloc(parent, cp->attr, cf_pair_value(cp), cp->op, cp->lhs_quote, cp->rhs_quote);
 	if (!new) return NULL;
 
-	if (copy_meta) new->parsed = cp->parsed;
+	if (copy_meta) {
+		new->item.parsed = cp->item.parsed;
+		new->item.referenced = cp->item.referenced;
+	}
 	cf_lineno_set(new, cp->item.lineno);
 	cf_filename_set(new, cp->item.filename);
 
@@ -1356,25 +1359,25 @@ int cf_pair_replace(CONF_SECTION *cs, CONF_PAIR *cp, char const *value)
 }
 
 
-/** Mark a pair as parsed
+/** Mark an item as parsed
  *
- * @param[in] cp	to mark as parsed.
+ * @param[in] ci	to mark as parsed.
  */
-void cf_pair_mark_parsed(CONF_PAIR *cp)
+void _cf_item_mark_parsed(CONF_ITEM *ci)
 {
-	cp->parsed = true;
+	ci->parsed = true;
 }
 
-/** Return whether a pair has already been parsed
+/** Return whether an item has already been parsed
  *
- * @param[in] cp	to check.
+ * @param[in] ci	to check.
  * @return
- *	- true if pair has been parsed.
+ *	- true if item has been parsed.
  *	- false if the pair hasn't been parsed.
  */
-bool cf_pair_is_parsed(CONF_PAIR *cp)
+bool _cf_item_is_parsed(CONF_ITEM *ci)
 {
-	return cp->parsed;
+	return ci->parsed;
 }
 
 /** Return the first child that's a #CONF_PAIR
@@ -2293,7 +2296,7 @@ void _cf_item_debug(CONF_ITEM const *ci)
 		DEBUG("  lhs_quote     : %s", fr_table_str_by_value(fr_token_quotes_table, cp->lhs_quote, "<INVALID>"));
 		DEBUG("  rhs_quote     : %s", fr_table_str_by_value(fr_token_quotes_table, cp->rhs_quote, "<INVALID>"));
 		DEBUG("  pass2         : %s", cp->pass2 ? "yes" : "no");
-		DEBUG("  parsed        : %s", cp->parsed ? "yes" : "no");
+		DEBUG("  parsed        : %s", cp->item.parsed ? "yes" : "no");
 	}
 		break;
 

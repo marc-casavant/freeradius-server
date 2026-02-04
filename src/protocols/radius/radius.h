@@ -86,6 +86,38 @@ typedef enum {
 								///< to drive logic in modules.
 } fr_radius_limit_proxy_state_t;
 
+/** Failure reasons */
+typedef enum {
+	FR_RADIUS_FAIL_NONE = 0,
+	FR_RADIUS_FAIL_MIN_LENGTH_PACKET,
+	FR_RADIUS_FAIL_MAX_LENGTH_PACKET,
+	FR_RADIUS_FAIL_MIN_LENGTH_FIELD,
+	FR_RADIUS_FAIL_MIN_LENGTH_MISMATCH,
+	FR_RADIUS_FAIL_UNKNOWN_PACKET_CODE,
+	FR_RADIUS_FAIL_UNEXPECTED_REQUEST_CODE,
+	FR_RADIUS_FAIL_UNEXPECTED_RESPONSE_CODE,
+	FR_RADIUS_FAIL_TOO_MANY_ATTRIBUTES,
+
+	FR_RADIUS_FAIL_INVALID_ATTRIBUTE,
+
+	FR_RADIUS_FAIL_HEADER_OVERFLOW,
+	FR_RADIUS_FAIL_ATTRIBUTE_TOO_SHORT,
+	FR_RADIUS_FAIL_ATTRIBUTE_OVERFLOW,
+	FR_RADIUS_FAIL_ATTRIBUTE_DECODE,
+
+	FR_RADIUS_FAIL_MA_INVALID_LENGTH,
+	FR_RADIUS_FAIL_MA_MISSING,
+	FR_RADIUS_FAIL_MA_INVALID,
+	FR_RADIUS_FAIL_PROXY_STATE_MISSING,
+
+	FR_RADIUS_FAIL_VERIFY,
+	FR_RADIUS_FAIL_NO_MATCHING_REQUEST,
+	FR_RADIUS_FAIL_IO_ERROR,
+	FR_RADIUS_FAIL_MAX
+} fr_radius_decode_fail_t;
+
+extern char const *fr_radius_decode_fail_reason[FR_RADIUS_FAIL_MAX + 1];
+
 typedef struct {
 	fr_pair_t	*parent;
 	fr_dcursor_t	cursor;
@@ -132,6 +164,8 @@ typedef struct {
 	TALLOC_CTX		*tmp_ctx;		//!< for temporary things cleaned up during decoding
 	uint8_t const  		*end;			//!< end of the packet
 
+	fr_radius_decode_fail_t	reason;			//!< reason for decode failure
+
 	uint8_t			request_code;		//!< original code for the request.
 
 	bool 			tunnel_password_zeros;  //!< check for trailing zeros on decode
@@ -160,29 +194,6 @@ typedef struct {
 	unsigned int			abinary : 1;		//!< Attribute is in "abinary" format
 	fr_radius_attr_flags_encrypt_t	encrypt;		//!< Attribute is encrypted
 } fr_radius_attr_flags_t;
-
-/** Failure reasons */
-typedef enum {
-	DECODE_FAIL_NONE = 0,
-	DECODE_FAIL_MIN_LENGTH_PACKET,
-	DECODE_FAIL_MAX_LENGTH_PACKET,
-	DECODE_FAIL_MIN_LENGTH_FIELD,
-	DECODE_FAIL_MIN_LENGTH_MISMATCH,
-	DECODE_FAIL_HEADER_OVERFLOW,
-	DECODE_FAIL_UNKNOWN_PACKET_CODE,
-	DECODE_FAIL_INVALID_ATTRIBUTE,
-	DECODE_FAIL_ATTRIBUTE_TOO_SHORT,
-	DECODE_FAIL_ATTRIBUTE_OVERFLOW,
-	DECODE_FAIL_MA_INVALID_LENGTH,
-	DECODE_FAIL_ATTRIBUTE_UNDERFLOW,
-	DECODE_FAIL_TOO_MANY_ATTRIBUTES,
-	DECODE_FAIL_MA_MISSING,
-	DECODE_FAIL_MA_INVALID,
-	DECODE_FAIL_VERIFY,
-	DECODE_FAIL_UNKNOWN,
-	DECODE_FAIL_MAX
-} fr_radius_decode_fail_t;
-
 
 DIAG_OFF(unused-function)
 /** Return RADIUS-specific flags for a given attribute

@@ -191,6 +191,38 @@ static int transport_parse(TALLOC_CTX *ctx, void *out, void *parent, CONF_ITEM *
 	return 0;
 }
 
+DIAG_OFF(format-nonliteral)
+/** Log a message in a canonical format.
+ *
+ *  'fmt' is from our source code, so we don't care about format literals.
+ */
+void proto_radius_log(fr_listen_t *li, char const *name, fr_radius_decode_fail_t reason,
+		      fr_socket_t const *sock, char const *fmt, ...)
+{
+	va_list ap;
+	char *msg = NULL;
+
+	if (!DEBUG_ENABLED2) return;
+
+	va_start(ap, fmt);
+	if (*fmt) msg = talloc_asprintf(NULL, fmt, ap);
+	va_end(ap);
+
+	if (sock) {
+		DEBUG2("proto_%s - discarding packet on socket %s from client %pV port %u - %s (%s)",
+		       li->app_io->common.name, name,
+		       fr_box_ipaddr(sock->inet.src_ipaddr), sock->inet.src_port,
+		       msg,
+		       fr_radius_decode_fail_reason[reason]);
+	} else {
+		DEBUG2("proto_%s - discarding packet on socket %s - %s (%s)",
+		       li->app_io->common.name, name, msg, fr_radius_decode_fail_reason[reason]);
+	}
+
+	talloc_free(msg);
+}
+DIAG_ON(format-nonliteral)
+
 /** Decode the packet
  *
  */

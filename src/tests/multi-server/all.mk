@@ -1,7 +1,12 @@
 #
 # all.mk for multi-server tests
 #
-# Test targets map to a test YAML of the same name, and to a Docker Compose "env" YAML.
+# Test targets map testcase variants to a common environment compose file.
+#
+# For example, the test target "test-5hs-autoaccept", "test-5hs-autoaccept-5min" or
+# "test-5hs-autoaccept-variant3" all map to the same compose environment.  This is
+# done on purpose to allow multiple test variants to share the same base docker compose
+# environment, while still having unique test YAML files.
 #
 # Examples:
 #   make test-5hs-autoaccept
@@ -21,10 +26,6 @@
 #   - Convert "test-..." to "environments/docker-compose/env-....yml".
 #   - If that env file does not exist, strip the last "-suffix" segment and try again,
 #     repeating until a matching env file is found.
-#
-# This lets you create any number of variant tests (e.g. -5min, -variant3, -foo-bar-baz)
-# that reuse the same base compose environment, while still keeping a unique test YAML
-# per variant.
 
 # Find ENV compose file by stripping trailing "-suffix" chunks until a match exists.
 # Returns: environments/docker-compose/env-<base-without-test->.yml

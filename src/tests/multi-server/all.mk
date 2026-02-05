@@ -8,7 +8,6 @@
 # done on purpose to allow multiple test variants to share the same base docker compose
 # environment, while still having unique test YAML files.
 #
-# Examples:
 #   make test-5hs-autoaccept
 #     -> TEST_FILENAME     = test-5hs-autoaccept.yml
 #     -> ENV_COMPOSE_PATH  = environments/docker-compose/env-5hs-autoaccept.yml
@@ -21,11 +20,11 @@
 #     -> TEST_FILENAME     = test-2p-2p-4hs-sql-mycustomvariantstring.yml
 #     -> ENV_COMPOSE_PATH  = environments/docker-compose/env-2p-2p-4hs-sql.yml
 #
-# Compose env selection rule:
-#   - Start with the full test target name (TEST_NAME).
-#   - Convert "test-..." to "environments/docker-compose/env-....yml".
-#   - If that env file does not exist, strip the last "-suffix" segment and try again,
-#     repeating until a matching env file is found.
+# Jinja2 Template Pre-Processing:
+#
+# Prior to running a test, .j2 files are processed using the config_builder.py script
+# of the test-framework.
+#
 
 # Find ENV compose file by stripping trailing "-suffix" chunks until a match exists.
 # Returns: environments/docker-compose/env-<base-without-test->.yml
@@ -145,9 +144,3 @@ all: $(TEST_NAMES)
 # Ensure the target directory exists
 $(MULTI_SERVER_BUILD_DIR_REL_PATH):
 	@mkdir -p "$@"
-
-# Create .venv if it doesn't exist (in the build directory)
-$(VENV_DIR): | $(MULTI_SERVER_BUILD_DIR_REL_PATH)
-	python3 -m venv "$(VENV_DIR)"
-
-venv: $(VENV_DIR)

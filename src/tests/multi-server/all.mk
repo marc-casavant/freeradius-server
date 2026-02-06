@@ -102,6 +102,12 @@ endef
 # Set directory name where all.mk is located. Help with relative paths
 MULTI_SERVER_TESTS_BASE_DIR_ABS_PATH := $(dir $(abspath $(lastword $(MAKEFILE_LIST))))
 
+# Set BUILD_DIR to 'build' if not already set. BUILD_DIR
+# typically set by the top-level Makefile, however, we would also
+# like to be able to run the targets from this file without the use of the top-level Makefile.
+ifeq ($(origin BUILD_DIR), undefined)
+BUILD_DIR := build
+endif
 FREERADIUS_SERVER_BUILD_DIR_REL_PATH := $(BUILD_DIR)
 
 # Where we keep build-side artifacts for test-framework

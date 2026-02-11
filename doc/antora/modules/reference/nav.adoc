@@ -67,8 +67,9 @@
 *** xref:type/string/unquoted.adoc[Unquoted Strings]
 
 ** xref:xlat/index.adoc[Dynamic Expansions]
-*** xref:xlat/all.adoc[Summary of Built-in Functions]
-*** xref:xlat/alternation.adoc[Alternation Syntax]
+*** xref:xlat/function.adoc[Function Syntax]
+*** xref:xlat/all.adoc[Built-in Functions]
+*** xref:xlat/alternation.adoc[Alternation]
 *** xref:xlat/attribute.adoc[Attribute References]
 *** xref:xlat/conversion.adoc[Data Conversion]
 *** xref:xlat/deprecated.adoc[Deprecated Functions]
@@ -81,15 +82,14 @@
 **** xref:xlat/file/size.adoc[size]
 **** xref:xlat/file/tail.adoc[tail]
 
-*** xref:xlat/function.adoc[Function Syntax]
-*** xref:xlat/hash.adoc[Hash / Digests]
+*** xref:xlat/hash.adoc[Hash / Digest]
 *** xref:xlat/hmac.adoc[HMAC]
 
 *** xref:xlat/interpreter.adoc[Interpreter State and Debugging]
-*** xref:xlat/log.adoc[Logging Functions]
+*** xref:xlat/log.adoc[Logging]
 *** xref:xlat/protocol.adoc[Protocol Encoding and Decoding]
 
-*** xref:xlat/misc/index.adoc[Miscellaneous Functions]
+*** xref:xlat/misc/index.adoc[Miscellaneous]
 **** xref:xlat/misc/config.adoc[Server Configuration]
 **** xref:xlat/misc/length.adoc[length]
 **** xref:xlat/misc/misc.adoc[Miscellaneous]
@@ -100,7 +100,7 @@
 **** xref:xlat/pairs/immutable.adoc[Mark as immutable]
 **** xref:xlat/pairs/print.adoc[Print to string]
 
-*** xref:xlat/str/index.adoc[String Handling]
+*** xref:xlat/str/index.adoc[Strings]
 **** xref:xlat/str/concat.adoc[Concatenation]
 **** xref:xlat/str/split.adoc[Split Strings]
 **** xref:xlat/misc/misc.adoc#length[Length]
@@ -119,7 +119,7 @@
 **** xref:xlat/time/offset.adoc[UTC Offset]
 **** xref:xlat/time/request.adoc[Request Time]
 
-*** xref:xlat/ipv4/index.adoc[IPv4 Handling]
+*** xref:xlat/ipv4/index.adoc[IPv4]
 **** xref:xlat/ipv4/broadcast.adoc[Broadcast Address]
 **** xref:xlat/ipv4/netmask.adoc[Subnet Mask]
 
@@ -233,6 +233,7 @@
 ***** xref:raddb/mods-available/isc_dhcp.adoc[ISC DHCP]
 **** xref:raddb/mods-available/radius.adoc[RADIUS]
 ***** xref:raddb/mods-available/cui.adoc[CUI]
+***** xref:raddb/mods-available/home_server_pool.adoc[home_server_pool]
 ***** xref:raddb/mods-available/wimax.adoc[WiMAX]
 
 *** xref:raddb/mods-available/doc/utility.adoc[Utility]
@@ -262,6 +263,7 @@
 *** xref:raddb/sites-available/ldap_sync.adoc[LDAP Sync]
 *** xref:raddb/sites-available/doc/radius.adoc[RADIUS]
 **** xref:raddb/sites-available/default.adoc[Default]
+**** xref:raddb/sites-available/proxy.adoc[Proxy]
 **** xref:raddb/sites-available/buffered-sql.adoc[Buffered SQL]
 **** xref:raddb/sites-available/challenge.adoc[Challenge-Response]
 **** xref:raddb/sites-available/coa.adoc[CoA]

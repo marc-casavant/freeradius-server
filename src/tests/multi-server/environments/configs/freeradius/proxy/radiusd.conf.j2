@@ -36,6 +36,9 @@ modules {
         {% include "environments/configs/freeradius/common/mods-available/linelog_file" %}
 	{% endif %}
 
+	# Common always module configuration
+	{% include "environments/configs/freeradius/common/mods-available/always" %}
+
 	# radius module instance configuration
 	{% for i in range(1, (proxy_num_of_dst_servers + 1)) %}
 	radius radius-module-dst-server{{ i }} {
@@ -107,15 +110,6 @@ server proxy {
 		}
 	}
 
-        listen accounting {
-		type = Accounting-Request
-		transport = udp
-		udp {
-			ipaddr = *
-			port = 1813
-		}
-	}
-
 	client upstream-proxy {
 		ipaddr = $ENV{TEST_SUBNET}
 		secret = testing123
@@ -137,12 +131,8 @@ server proxy {
 		}
 	}
 
-	send Access-Accept {
-		stats
-	}
-
-	send Access-Reject {
-		stats
+	recv Status-Server {
+		ok
 	}
 
 }

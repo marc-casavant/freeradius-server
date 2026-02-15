@@ -1,6 +1,16 @@
 ################################################################################
 # all.mk - Multi-Server Test Framework
 ################################################################################
+#
+# TABLE OF CONTENTS:
+#   1. Overview & Usage
+#   2. Directory & Path Configuration
+#   3. Framework Repository Setup
+#   4. Helper Functions
+#   5. Dynamic Test Target Generation
+#   6. Test Discovery & Instantiation
+#
+################################################################################
 
 ################################################################################
 # 1. OVERVIEW & USAGE
@@ -148,7 +158,7 @@ $(1): ENV_STEM := $$(patsubst environments/docker-compose/env-%.yml,%,$$(ENV_COM
 # Jinja2 variables file (aligned to environment stem)
 $(1): VARS_FILE_REL ?= environments/jinja-vars/env-$$(ENV_STEM).vars.yml
 
-# ---- Test framework setup, Jinja template rendering and test run ----
+# ---- Test Execution ----
 $(1): clone
 	@echo "MULTI_SERVER_BUILD_DIR_REL_PATH=$(MULTI_SERVER_BUILD_DIR_REL_PATH)"
 	@echo "MULTI_SERVER_BUILD_DIR_ABS_PATH=$(MULTI_SERVER_BUILD_DIR_ABS_PATH)"

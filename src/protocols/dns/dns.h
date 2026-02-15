@@ -23,7 +23,7 @@
  *
  * @copyright 2021 Network RADIUS SAS (legal@networkradius.com)
  */
-RCSIDH(dhcp_h, "$Id$")
+RCSIDH(protocols_dns_h, "$Id$")
 
 #ifdef __cplusplus
 extern "C" {
@@ -124,6 +124,7 @@ typedef enum {
 	FR_DNS_DECODE_FAIL_MISSING_QD_HEADER,
 	FR_DNS_DECODE_FAIL_MISSING_TLV_HEADER,
 	FR_DNS_DECODE_FAIL_TLV_OVERFLOWS_RR,
+	FR_DNS_DECODE_FAIL_TRUNCATED,
 	FR_DNS_DECODE_FAIL_MAX
 } fr_dns_decode_fail_t;
 

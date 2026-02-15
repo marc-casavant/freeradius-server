@@ -195,11 +195,7 @@ static ssize_t fr_radius_decode_password(char *passwd, size_t pwlen, fr_radius_d
 	int		i;
 	size_t		n;
 
-	/*
-	 *	The RFC's say that the maximum is 128, but where we
-	 *	come from, we don't need limits.
-	 */
-	if (pwlen > RADIUS_MAX_PASS_LENGTH) pwlen = RADIUS_MAX_PASS_LENGTH;
+	fr_assert(pwlen <= RADIUS_MAX_STRING_LENGTH);
 
 	/*
 	 *	Catch idiots.
@@ -491,6 +487,7 @@ static ssize_t decode_nas_filter_rule(TALLOC_CTX *ctx, fr_pair_list_t *out,
 	uint8_t	const	*decode, *decode_end;
 	uint8_t		*buffer = NULL;
 	size_t		total = 0;
+	int		attrs = 0;
 
 	/*
 	 *	Figure out how long the total length of the data is.
@@ -508,6 +505,7 @@ static ssize_t decode_nas_filter_rule(TALLOC_CTX *ctx, fr_pair_list_t *out,
 
 		total += ptr[1] - 2;
 		ptr += ptr[1];
+		attrs++;
 	}
 	end = ptr;
 
@@ -517,7 +515,7 @@ static ssize_t decode_nas_filter_rule(TALLOC_CTX *ctx, fr_pair_list_t *out,
 	 *	More than one attribute, create a temporary buffer,
 	 *	and copy all of the data over to it.
 	 */
-	if (total > RADIUS_MAX_STRING_LENGTH) {
+	if (attrs > 1) {
 		uint8_t *p;
 
 		buffer = talloc_array(packet_ctx->tmp_ctx, uint8_t, total);
@@ -614,7 +612,7 @@ static ssize_t decode_digest_attributes(TALLOC_CTX *ctx, fr_pair_list_t *out,
 redo:
 	FR_PROTO_HEX_DUMP(p, end - p, "decode_digest_attributes");
 
-	if (((size_t) (p - end) < 2) || (p[1] > (size_t) (end - p))) {
+	if (((size_t) (end - p) < 2) || (p[1] > (size_t) (end - p))) {
 		slen = fr_pair_raw_from_network(vp, &vp->vp_group, parent, p, end - p);
 		if (slen < 0) {
 			talloc_free(vp);
@@ -1489,7 +1487,7 @@ ssize_t fr_radius_decode_pair_value(TALLOC_CTX *ctx, fr_pair_list_t *out,
 	fr_dict_attr_t const	*child;
 	fr_pair_t		*vp = NULL;
 	uint8_t const		*p = data;
-	uint8_t			buffer[256];
+	uint8_t			buffer[256]; /* must be multiple of 16 */
 	fr_radius_attr_flags_encrypt_t encrypt;
 	fr_radius_decode_ctx_t *packet_ctx = decode_ctx;
 
@@ -1613,6 +1611,7 @@ ssize_t fr_radius_decode_pair_value(TALLOC_CTX *ctx, fr_pair_list_t *out,
 	}
 
 	encrypt = fr_radius_flag_encrypted(parent);
+
 	/*
 	 *	Decrypt the attribute.
 	 */
@@ -1636,7 +1635,6 @@ ssize_t fr_radius_decode_pair_value(TALLOC_CTX *ctx, fr_pair_list_t *out,
 			if (!packet_ctx->request_authenticator) goto raw;
 
 			fr_radius_decode_password((char *)buffer, attr_len, packet_ctx);
-			buffer[253] = '\0';
 
 			/*
 			 *	MS-CHAP-MPPE-Keys are 24 octets, and
@@ -1683,7 +1681,8 @@ ssize_t fr_radius_decode_pair_value(TALLOC_CTX *ctx, fr_pair_list_t *out,
 			if (!packet_ctx->request_authenticator) goto raw;
 
 			fr_radius_ascend_secret(&FR_DBUFF_TMP(buffer, sizeof(buffer)), p, data_len,
-						packet_ctx->common->secret, packet_ctx->request_authenticator);
+						packet_ctx->common->secret, packet_ctx->common->secret_length,
+						packet_ctx->request_authenticator);
 			buffer[RADIUS_AUTH_VECTOR_LENGTH] = '\0';
 			data_len = strlen((char *) buffer);
 			break;

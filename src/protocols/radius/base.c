@@ -249,7 +249,7 @@ int fr_radius_allow_reply(int code, bool allowed[static FR_RADIUS_CODE_MAX])
  * encrypting passwords to RADIUS.
  */
 ssize_t fr_radius_ascend_secret(fr_dbuff_t *dbuff, uint8_t const *in, size_t inlen,
-				char const *secret, uint8_t const *vector)
+				char const *secret, size_t secret_len, uint8_t const *vector)
 {
 	fr_md5_ctx_t		*md5_ctx;
 	size_t			i;
@@ -260,7 +260,7 @@ ssize_t fr_radius_ascend_secret(fr_dbuff_t *dbuff, uint8_t const *in, size_t inl
 
 	md5_ctx = fr_md5_ctx_alloc_from_list();
 	fr_md5_update(md5_ctx, vector, RADIUS_AUTH_VECTOR_LENGTH);
-	fr_md5_update(md5_ctx, (uint8_t const *) secret, talloc_array_length(secret) - 1);
+	fr_md5_update(md5_ctx, (uint8_t const *) secret, secret_len);
 	fr_md5_final(digest, md5_ctx);
 	fr_md5_ctx_free_from_list(&md5_ctx);
 
@@ -1274,33 +1274,33 @@ static bool attr_valid(fr_dict_attr_t *da)
 
 	if (da->parent->type == FR_TYPE_STRUCT) {
 		if (flags->extended) {
-			fr_strerror_const("Attributes of type 'extended' cannot be used inside of a 'struct'");
+			fr_strerror_const("Attributes with 'extended' flag cannot be used inside of a 'struct'");
 			return false;
 		}
 
 		if (flags->long_extended) {
-			fr_strerror_const("Attributes of type 'long_extended' cannot be used inside of a 'struct'");
+			fr_strerror_const("Attributes with 'long_extended' flag cannot be used inside of a 'struct'");
 			return false;
 		}
 
 
 		if (flags->concat) {
-			fr_strerror_const("Attributes of type 'concat' cannot be used inside of a 'struct'");
+			fr_strerror_const("Attributes with 'concat' flag cannot be used inside of a 'struct'");
 			return false;
 		}
 
 		if (flags->has_tag) {
-			fr_strerror_const("Attributes of type 'concat' cannot be used inside of a 'struct'");
+			fr_strerror_const("Attributes with 'tag' flag cannot be used inside of a 'struct'");
 			return false;
 		}
 
 		if (flags->abinary) {
-			fr_strerror_const("Attributes of type 'abinary' cannot be used inside of a 'struct'");
+			fr_strerror_const("Attributes with 'abinary' flag cannot be used inside of a 'struct'");
 			return false;
 		}
 
 		if (flags->encrypt > 0) {
-			fr_strerror_const("Attributes of type 'encrypt' cannot be used inside of a 'struct'");
+			fr_strerror_const("Attributes with 'encrypt' flag cannot be used inside of a 'struct'");
 			return false;
 		}
 

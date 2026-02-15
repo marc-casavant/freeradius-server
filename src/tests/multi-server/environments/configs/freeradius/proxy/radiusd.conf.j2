@@ -132,7 +132,7 @@ server proxy {
 		# Use redundant-load-balance to distribute requests to multiple home servers
 		redundant-load-balance {
 			{% for i in range(1, (proxy_num_of_dst_servers + 1)) %}
-			radius-module-dest-server{{ i }}
+			radius-module-dst-server{{ i }}
 			{% endfor %}
 		}
 	}

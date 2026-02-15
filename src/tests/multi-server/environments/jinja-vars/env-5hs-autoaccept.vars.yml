@@ -1,3 +1,8 @@
+jinja_templates_to_render:
+  - environments/configs/freeradius/homeserver/radiusd.conf.j2
+  - environments/configs/freeradius/load-generator/radiusd.conf.j2
+  - environments/docker-compose/env-5hs-autoaccept.yml.j2
+
 # Docker compose Jinja template vars
 compose_num_of_home_servers: 5
 # Load generator Jinja template vars

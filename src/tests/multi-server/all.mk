@@ -1,19 +1,9 @@
 ################################################################################
 # all.mk - Multi-Server Test Framework
 ################################################################################
-#
-# TABLE OF CONTENTS:
-#   1. Overview & Usage
-#   2. Directory & Path Configuration
-#   3. Framework Repository Setup
-#   4. Helper Functions
-#   5. Dynamic Test Target Generation
-#   6. Test Discovery & Instantiation
-#
-################################################################################
 
 ################################################################################
-# 1. OVERVIEW & USAGE
+# 1. OVERVIEW
 ################################################################################
 #
 # This Makefile dynamically generates test targets from test-*.yml files.
@@ -27,17 +17,11 @@
 #
 #   make test-5hs-autoaccept-5min
 #     -> TEST_FILENAME     = test-5hs-autoaccept-5min.yml
-#     -> ENV_COMPOSE_PATH  = environments/docker-compose/env-5hs-autoaccept.yml (same!)
+#     -> ENV_COMPOSE_PATH  = environments/docker-compose/env-5hs-autoaccept.yml
 #
 #   make test-2p-2p-4hs-sql-mycustomvariantstring
 #     -> TEST_FILENAME     = test-2p-2p-4hs-sql-mycustomvariantstring.yml
 #     -> ENV_COMPOSE_PATH  = environments/docker-compose/env-2p-2p-4hs-sql.yml
-#
-# HOW IT WORKS:
-#   - Test files follow the pattern: test-*.yml
-#   - Environment files follow: env-*.yml.j2 (Jinja2 templates)
-#   - The makefile strips suffixes from test names until it finds a matching env
-#   - Jinja2 templates are rendered using config_builder.py before tests run
 #
 ################################################################################
 
@@ -94,13 +78,10 @@ $(MULTI_SERVER_BUILD_DIR_REL_PATH):
 # 4. HELPER FUNCTIONS
 ################################################################################
 
-# FIND_ENV_COMPOSE_J2 - Locate the environment Compose template
+# FIND_ENV_COMPOSE_J2 - Locate the test's environment Docker compose template
 #
-# Given a test name like "test-5hs-autoaccept-5min", this function strips
-# trailing hyphenated segments until it finds a matching environment file:
-#
-#   test-5hs-autoaccept-5min  -> env-5hs-autoaccept-5min.yml.j2  (check)
-#   test-5hs-autoaccept       -> env-5hs-autoaccept.yml.j2       (found!)
+# For example, for a test name "test-5hs-autoaccept-5min", this function strips
+# trailing hyphenated segments until it finds a matching environment file.
 #
 # Returns: Path to the .j2 template relative to MULTI_SERVER_TESTS_BASE_DIR_ABS_PATH
 #
@@ -145,7 +126,7 @@ define MAKE_TEST_TARGET
 $(1): TEST_NAME     := $(1)
 $(1): TEST_FILENAME := $$(TEST_NAME).yml
 
-# Find which environment Compose template to use (must exist)
+# Find which environment Compose template to use
 $(1): ENV_COMPOSE_TEMPLATE_PATH := $$(call FIND_ENV_COMPOSE_J2,$$(TEST_NAME))
 
 # Output Compose file path (strip .j2 extension)
@@ -155,10 +136,9 @@ $(1): ENV_COMPOSE_PATH := $$(patsubst %.j2,%,$$(ENV_COMPOSE_TEMPLATE_PATH))
 # Example: environments/docker-compose/env-5hs-autoaccept.yml -> 5hs-autoaccept
 $(1): ENV_STEM := $$(patsubst environments/docker-compose/env-%.yml,%,$$(ENV_COMPOSE_PATH))
 
-# Jinja2 variables file (aligned to environment stem)
+# Jinja2 variables file
 $(1): VARS_FILE_REL ?= environments/jinja-vars/env-$$(ENV_STEM).vars.yml
 
-# ---- Test Execution ----
 $(1): clone
 	@echo "MULTI_SERVER_BUILD_DIR_REL_PATH=$(MULTI_SERVER_BUILD_DIR_REL_PATH)"
 	@echo "MULTI_SERVER_BUILD_DIR_ABS_PATH=$(MULTI_SERVER_BUILD_DIR_ABS_PATH)"
@@ -203,44 +183,32 @@ $(1): clone
 		echo "  DEBUG: ENV_COMPOSE_TEMPLATE_ABS = $$$$ENV_COMPOSE_TEMPLATE_ABS"; \
 		echo "  DEBUG: ENV_COMPOSE_ABS = $$$$ENV_COMPOSE_ABS"; \
 		echo "  DEBUG: TEST_FILENAME_ABS = $$$$TEST_FILENAME_ABS"; \
-		echo "  ✓ Variables set successfully"; \
-		\
-		echo ""; \
-		echo "Configuration:"; \
-		echo "  TEST_NAME              = $(1)"; \
-		echo "  TEST_FILENAME          = $$(TEST_FILENAME)"; \
-		echo "  TEST_FILENAME_ABS      = $$$$TEST_FILENAME_ABS"; \
-		echo "  ENV_STEM               = $$(ENV_STEM)"; \
-		echo "  ENV_COMPOSE_PATH       = $$(ENV_COMPOSE_PATH)"; \
-		echo "  VARS_FILE_REL          = $$(VARS_FILE_REL)"; \
-		echo "  LISTENER_DIR           = $$$$LISTENER_DIR"; \
-		echo ""; \
 		\
 		echo "==> [Step 6/7] Validating required files"; \
 		\
 		test -f "$$$$VARS_FILE_ABS" || { \
 			echo "ERROR: Missing vars file: $$$$VARS_FILE_ABS" >&2; exit 1; \
 		}; \
-		echo "  ✓ Found vars file"; \
+		echo "  - Found vars file"; \
 		test -f "$$$$ENV_COMPOSE_TEMPLATE_ABS" || { \
 			echo "ERROR: Missing compose template: $$$$ENV_COMPOSE_TEMPLATE_ABS" >&2; exit 1; \
 		}; \
-		echo "  ✓ Found compose template"; \
+		echo "  - Found compose template"; \
 		test -f "$$$$TEST_FILENAME_ABS" || { \
 			echo "ERROR: Missing test file: $$$$TEST_FILENAME_ABS" >&2; exit 1; \
 		}; \
-		echo "  ✓ Found test file"; \
+		echo "  - Found test file"; \
 		echo ""; \
 		\
 		echo "==> [Step 7/7] Rendering Jinja2 templates and running tests"; \
 		\
-		echo "  → Reading jinja_templates_to_render from vars file"; \
+		echo "  - Reading jinja_templates_to_render from vars file"; \
 		TEMPLATE_LIST_FILE=`mktemp`; \
 		sed -n "/^jinja_templates_to_render:/,/^[A-Za-z0-9_].*:/p" "$$$$VARS_FILE_ABS" \
 			| sed -n "s/^  - //p" > "$$$$TEMPLATE_LIST_FILE"; \
 		\
 		if [ -s "$$$$TEMPLATE_LIST_FILE" ]; then \
-			echo "  → Templates to render:"; \
+			echo "  - Templates to render:"; \
 			while IFS= read -r rel_tmpl; do \
 				[ -n "$$$$rel_tmpl" ] || continue; \
 				echo "    - $$$$rel_tmpl"; \
@@ -253,13 +221,13 @@ $(1): clone
 				test -f "$$$$aux_abs" || { echo "ERROR: Template not found: $$$$aux_abs" >&2; exit 1; }; \
 				if [ -d "$$$$output_abs" ]; then \
 					if [ -z "$$(ls -A "$$$$output_abs")" ]; then \
-						echo "  → Removing empty directory blocking output: $$$$output_abs"; \
+						echo "  - Removing empty directory blocking output: $$$$output_abs"; \
 						rmdir "$$$$output_abs"; \
 					else \
 						echo "ERROR: Output path is a non-empty directory: $$$$output_abs" >&2; exit 1; \
 					fi; \
 				fi; \
-				echo "  → Rendering $$$$rel_tmpl"; \
+				echo "  - Rendering $$$$rel_tmpl"; \
 				python3 src/config_builder.py \
 					--vars-file "$$$$VARS_FILE_ABS" \
 					--aux-file "$$$$aux_abs" \
@@ -273,12 +241,12 @@ $(1): clone
 		test -f "$$$$ENV_COMPOSE_ABS" || { \
 			echo "ERROR: Compose file was not generated: $$$$ENV_COMPOSE_ABS" >&2; exit 1; \
 		}; \
-		echo "  ✓ Generated compose file"; \
+		echo "  - Generated compose file"; \
 		echo ""; \
 		\
-		echo "  → Running test-framework"; \
+		echo "  - Running test-framework"; \
 		DATA_PATH="$$(MULTI_SERVER_TESTS_BASE_DIR_ABS_PATH)environments/configs" \
-			make test-framework -- -x -vvv \
+			make test-framework -- -x -v \
 			--compose "$$$$ENV_COMPOSE_ABS" \
 			--test "$$$$TEST_FILENAME_ABS" \
 			--use-files \

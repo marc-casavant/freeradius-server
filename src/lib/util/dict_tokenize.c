@@ -1059,15 +1059,23 @@ static int dict_attr_allow_dup(fr_dict_attr_t const *da)
 
 	switch (da->type) {
 	/*
-	 *	For certain STRUCTURAL types, we allow strict duplicates
-	 *	as if the user wants to add extra children in the custom
+	 *	For certain types, we allow strict duplicates as if
+	 *	the user wants to add extra children in the custom
 	 *	dictionary, or wants to avoid ordering issues between
 	 *	multiple dictionaries, we need to support this.
 	 */
 	case FR_TYPE_VSA:
 	case FR_TYPE_VENDOR:
 	case FR_TYPE_TLV:
-		if (fr_dict_attr_cmp_fields(da, found) == 0) return -1;
+		if (fr_dict_attr_cmp_fields(da, found) == 0) return 0;
+		break;
+
+	case FR_TYPE_LEAF:
+		/*
+		 *	Leaf types can be duplicated if they are identical.
+		 */
+		if ((da->type == found->type) &&
+		    (fr_dict_attr_cmp_fields(da, found) == 0)) return 0;
 		break;
 
 	default:
@@ -1077,12 +1085,12 @@ static int dict_attr_allow_dup(fr_dict_attr_t const *da)
 	if (dup_name) {
 		fr_strerror_printf("Duplicate attribute name '%s' in namespace '%s'.  Originally defined %s[%d]",
 				   da->name, da->parent->name, dup_name->filename, dup_name->line);
-		return 0;
+		return -1;
 	}
 
 	fr_strerror_printf("Duplicate attribute number %u in parent '%s'.  Originally defined %s[%d]",
 				da->attr, da->parent->name, dup_num->filename, dup_num->line);
-	return 0;
+	return -1;
 }
 
 static int dict_struct_finalise(dict_tokenize_ctx_t *dctx)
@@ -1720,7 +1728,7 @@ static int dict_read_process_attribute(dict_tokenize_ctx_t *dctx, char **argv, i
 		 *	the VALUE also contains a pointer to the child struct.
 		 */
 		if (key && (dict_attr_enum_add_name(fr_dict_attr_unconst(key), da->name, &box, false, true, da) < 0)) {
-			goto error;
+			return -1;	/* Leaves attr added */
 		}
 
 		/*
@@ -1753,7 +1761,7 @@ static int dict_read_process_attribute(dict_tokenize_ctx_t *dctx, char **argv, i
 		fr_assert(parent->parent);
 
 		if (dict_attr_alias_add(parent->parent, da->name, da, false) < 0) {
-			goto error;
+			return -1;	/* Leaves attr added */
 		}
 	}
 
@@ -1972,8 +1980,7 @@ static int dict_read_process_begin_vendor(dict_tokenize_ctx_t *dctx, char **argv
 		}
 
 		if (dict_attr_add_to_namespace(UNCONST(fr_dict_attr_t *, vsa_da), new) < 0) {
-			talloc_free(new);
-			return -1;
+			return -1; /* leaves attr added */
 		}
 
 		vendor_da = new;
@@ -2329,7 +2336,7 @@ static int dict_read_process_enum(dict_tokenize_ctx_t *dctx, char **argv, int ar
 	default:
 		fr_strerror_printf("ENUMs can only be a leaf type, not %s",
 				   fr_type_to_str(da->type));
-		break;
+		goto error;
 	}
 
 	parent = CURRENT_FRAME(dctx)->da;
@@ -3828,15 +3835,17 @@ int fr_dict_parse_str(fr_dict_t *dict, char const *input, fr_dict_attr_t const *
 	dctx.stack[0].da = parent;
 	dctx.stack[0].nest = NEST_TOP;
 
-	if (dict_fixup_init(NULL, &dctx.fixup) < 0) return -1;
+	if (dict_fixup_init(NULL, &dctx.fixup) < 0) {
+	error:
+		TALLOC_FREE(dctx.fixup.pool);
+		talloc_free(buf);
+		return -1;
+	}
 
 	if (strcasecmp(argv[0], "VALUE") == 0) {
 		if (argc < 4) {
 			fr_strerror_printf("VALUE needs at least 4 arguments, got %i", argc);
-		error:
-			TALLOC_FREE(dctx.fixup.pool);
-			talloc_free(buf);
-			return -1;
+			goto error;
 		}
 
 		if (!fr_dict_attr_by_oid(NULL, fr_dict_root(dict), argv[1])) {

@@ -706,7 +706,7 @@ static void unlang_module_event_retry_handler(UNUSED fr_timer_list_t *tl, fr_tim
 			 *	Call the module retry handler, with the state of the retry.  On MRD / MRC, the
 			 *	module is made runnable again, and the "resume" function is called.
 			 */
-			state->retry_cb(MODULE_CTX(state->mi, state->thread, state->env_data, state->rctx), state->request, &state->retry);
+			state->retry_cb(MODULE_CTX(state->mi, state->thread->data, state->env_data, state->rctx), state->request, &state->retry);
 		} else {
 			/*
 			 *	For signals, the module will get either a RETRY
@@ -755,7 +755,7 @@ static void unlang_module_event_retry_handler(UNUSED fr_timer_list_t *tl, fr_tim
 	 *	Run the retry handler on MRD / MRC, too.
 	 */
 	if (state->retry_cb) {
-		state->retry_cb(MODULE_CTX(state->mi, state->thread, state->env_data, state->rctx), state->request, &state->retry);
+		state->retry_cb(MODULE_CTX(state->mi, state->thread->data, state->env_data, state->rctx), state->request, &state->retry);
 	} else {
 		frame->signal(request, frame, FR_SIGNAL_TIMEOUT);
 	}
@@ -885,8 +885,6 @@ static unlang_action_t unlang_module(unlang_result_t *p_result, request_t *reque
 
 	switch (ua) {
 	case UNLANG_ACTION_YIELD:
-		state->thread->active_callers++;
-
 		/*
 		 *	The module yielded but didn't set a
 		 *	resume function, this means it's done
@@ -911,10 +909,12 @@ static unlang_action_t unlang_module(unlang_result_t *p_result, request_t *reque
 					&state->ev, state->retry.next,
 					false, unlang_module_event_retry_handler, request) < 0) {
 				RPEDEBUG("Failed inserting event");
+				ua = UNLANG_ACTION_CALCULATE_RESULT;
 				goto fail;
 			}
 		}
 
+		state->thread->active_callers++;
 		return UNLANG_ACTION_YIELD;
 
 	/*

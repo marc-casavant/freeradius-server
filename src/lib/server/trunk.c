@@ -3625,7 +3625,7 @@ static void _trunk_connection_on_failed(connection_t *conn,
 	 *	future, then fail all the requests in the
 	 *	trunk backlog.
 	 */
-	if ((state == CONNECTION_STATE_CONNECTED) &&
+	if ((prev == CONNECTION_STATE_CONNECTED) &&
 	    (trunk_connection_count_by_state(trunk,
 						(TRUNK_CONN_ACTIVE |
 						 TRUNK_CONN_FULL |
@@ -4219,8 +4219,12 @@ static void trunk_manage(trunk_t *trunk, fr_time_t now)
 			/*
 			 *	This connection has been inactive since before the idle timeout.  Drain it,
 			 *	and free it.
+			 *
+			 *	This also extracts the connection from the minmax heap, which invalidates the
+			 *	iterator, so we stop iterating over it.
 			 */
 			trunk_connection_enter_draining_to_free(tconn);
+			break;
 		}
 	}
 

@@ -399,6 +399,7 @@ ssize_t _tmpl_to_type(void *out,
 		if (bufflen < len) {
 			REDEBUG("Expansion buffer is too small.  Buffer is %zu bytes, and we need %zu bytes",
 				bufflen, len);
+			return -1;
 		}
 
 		/*
@@ -611,13 +612,16 @@ ssize_t _tmpl_to_atype(TALLOC_CTX *ctx, void *out,
 	 */
 	if (dst_type != vb_in->type) {
 		if (vb_in == &value) {
+			size_t datalen;
+
 			fr_assert(tmp_ctx != NULL);
 			fr_assert(str != NULL);
 			fr_assert(dst_type != FR_TYPE_STRING); /* exec / xlat returned string in 'str' */
 
-			slen = fr_value_box_from_str(ctx, &value, dst_type, NULL, str, (size_t) slen, NULL);
+			datalen = talloc_array_length(str) - 1;
+			slen = fr_value_box_from_str(ctx, &value, dst_type, NULL, str, datalen, NULL);
 			if (slen < 0) {
-				fr_value_box_bstrndup_shallow(&value, NULL, str, (size_t) slen, false);
+				fr_value_box_bstrndup_shallow(&value, NULL, str, datalen, false);
 				goto failed_cast;
 			}
 

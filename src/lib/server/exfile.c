@@ -219,7 +219,7 @@ exfile_t *exfile_init(TALLOC_CTX *ctx, uint32_t max_entries, fr_time_delta_t max
 void exfile_enable_triggers(exfile_t *ef, CONF_SECTION *conf, char const *trigger_prefix, fr_pair_list_t *trigger_args)
 {
 	talloc_const_free(ef->trigger_prefix);
-	MEM(ef->trigger_prefix = trigger_prefix ? talloc_typed_strdup(ef, trigger_prefix) : "");
+	MEM(ef->trigger_prefix = trigger_prefix ? talloc_typed_strdup(ef, trigger_prefix) : talloc_typed_strdup(ef, ""));
 
 	fr_pair_list_free(&ef->trigger_args);
 
@@ -273,10 +273,11 @@ static int exfile_open_mkdir(exfile_t *ef, char const *filename, mode_t permissi
 			talloc_free(dir);
 			return -1;
 		}
-		talloc_free(dir);
 
 		fd = openat(dirfd, p+1, O_RDWR | O_CREAT | flags, permissions);
+		talloc_free(dir);
 		close(dirfd);
+
 		if (fd < 0) {
 			fr_strerror_printf("Failed to open file %s: %s", filename, fr_syserror(errno));
 			return -1;

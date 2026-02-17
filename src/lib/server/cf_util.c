@@ -1325,7 +1325,7 @@ CONF_PAIR *cf_pair_dup(CONF_SECTION *parent, CONF_PAIR *cp, bool copy_meta)
 	return new;
 }
 
-/** Replace pair in a given section with a new pair, of the given value.
+/** Replace pair value in a given section with the given value.
  *
  * @note A new pair with the same metadata as the #CONF_PAIR will be added
  *	even if the #CONF_PAIR can't be found inside the #CONF_SECTION.
@@ -1339,20 +1339,10 @@ CONF_PAIR *cf_pair_dup(CONF_SECTION *parent, CONF_PAIR *cp, bool copy_meta)
  */
 int cf_pair_replace(CONF_SECTION *cs, CONF_PAIR *cp, char const *value)
 {
-	CONF_PAIR *new_cp;
-
 	if (!cs || !cp || !value) return -1;
 
-	/*
-	 *	Remove the old CONF_PAIR
-	 */
-	(void)cf_item_remove(cs, cp);
-
-	/*
-	 *	Add the new CONF_PAIR
-	 */
-	MEM(new_cp = cf_pair_dup(cs, cp, true));
 	talloc_const_free(cp->value);
+
 	MEM(cp->value = talloc_typed_strdup(cp, value));
 
 	return 0;
@@ -1934,8 +1924,8 @@ static inline CC_HINT(nonnull) void truncate_filename(char const **e, char const
 	q = strchr(*p, FR_DIR_SEP);
 	if (q) {
 		q++;
-		*p += (q - *p);
 		*len -= (q - *p);
+		*p += (q - *p);
 	}
 
 	*e = "...";
@@ -2405,14 +2395,8 @@ void cf_section_debug(CONF_SECTION *cs)
  */
 void cf_item_free_children(CONF_ITEM *ci)
 {
-	CONF_ITEM *child = NULL;
-
-	while ((child = fr_dlist_next(&ci->children, child)) != NULL) {
-		if (child->type == CONF_ITEM_DATA) {
-			continue;
-		}
-
-		child = fr_dlist_talloc_free_item(&ci->children, child);
+	cf_item_foreach(ci, child) {
+		_cf_item_remove(ci, child);
 	}
 }
 

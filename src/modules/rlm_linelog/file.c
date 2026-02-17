@@ -249,7 +249,7 @@ static void _batch_write(rlm_linelog_file_t *file)
 	}
 
 done:
-	if (exfile_close(inst->file.ef, fd) < 0) {
+	if ((fd >= 0) && (exfile_close(inst->file.ef, fd) < 0)) {
 		PERROR("Failed closing file %s", file->filename);
 	}
 
@@ -257,8 +257,8 @@ done:
 	file->entry_p = file->entry;
 
 	if (fr_time_delta_gt(inst->file.buffer_expiry, fr_time_delta_wrap(0))) {
-		fr_timer_in(file, file->thread_inst->tl, &file->expiry, inst->file.buffer_expiry,
-			    false, _batching_cleanup_timer, file);
+		(void) fr_timer_in(file, file->thread_inst->tl, &file->expiry, inst->file.buffer_expiry,
+				   false, _batching_cleanup_timer, file);
 	}
 }
 
@@ -289,7 +289,7 @@ linelog_buffer_action_t file_enqueue_write(rlm_linelog_file_entry_t **entry_p, m
 		talloc_set_name_const(file, "rlm_linelog_file_t");
 
 		file->filename = talloc_strdup(file, path);
-		file->log_header = fr_value_box_alloc_null(file);
+		MEM(file->log_header = fr_value_box_alloc_null(file));
 		file->mod_inst = inst;
 		file->thread_inst = thread;
 
@@ -337,8 +337,10 @@ linelog_buffer_action_t file_enqueue_write(rlm_linelog_file_entry_t **entry_p, m
 	*entry_p = file->entry_p;
 
 	if (fr_time_delta_gt(inst->file.buffer_delay, fr_time_delta_wrap(0)) && !fr_timer_armed(file->write) ) {
-		fr_timer_in(file, file->thread_inst->tl, &file->write, inst->file.buffer_delay,
-			    false, _batching_handle_timeout, file);
+		if (unlikely(fr_timer_in(file, file->thread_inst->tl, &file->write, inst->file.buffer_delay,
+					 false, _batching_handle_timeout, file)) < 0) {
+			RWARN("Failed adding timer to write logs for %pV", call_env->filename);
+		}
 	}
 
 	file->entry_p->data_len = ret;

@@ -90,7 +90,7 @@ jobs:
             echo "Error: freeradius-build:latest Docker image not found and required for multi-server test environment."
             exit 1
           fi
-          make -f src/tests/multi-server/all.mk test-5hs-autoaccept
+          make -f src/tests/multi-server/all.mk test-5hs-autoaccept VERBOSE=4
 
       - name: Verify test results
         shell: bash

@@ -10,6 +10,14 @@ FREERADIUS_MULTI_SERVER_TESTS_BASE_PATH_ABS := $(FREERADIUS_SERVER_SRC_PATH_ABS)
 FREERADIUS_MULTI_SERVER_BUILD_DIR_PATH_ABS := $(FREERADIUS_SERVER_BUILD_DIR_PATH_ABS)/tests/multi-server
 FREERADIUS_MULTI_SERVER_FRAMEWORK_GIT_REPO := https://github.com/InkbridgeNetworks/freeradius-multi-server.git
 
+# Multi-server test verbosity level
+VERBOSE ?= 1
+VERBOSE_LEVEL_1 := -v
+VERBOSE_LEVEL_2 := -vv
+VERBOSE_LEVEL_3 := -vvv
+VERBOSE_LEVEL_4 := -vvvv
+VERBOSE_ARG := $(VERBOSE_LEVEL_$(VERBOSE))
+
 .PHONY: 5hs-autoaccept-env-setup test-5hs-autoaccept test-5hs-autoaccept-5min 1p-2hs-autoaccept-env-setup test-1p-2hs-autoaccept test-1p-2hs-autoaccept-5min
 
 5hs-autoaccept-env-setup:
@@ -69,7 +77,7 @@ test-5hs-autoaccept: 5hs-autoaccept-env-setup
 	echo "INFO: Running test-5hs-autoaccept test using framework"; \
 	DATA_PATH="$(FREERADIUS_MULTI_SERVER_TESTS_BASE_PATH_ABS)/environments/configs" \
 	make test-framework \
-		-- -x -v \
+		-- -x $(VERBOSE_ARG) \
 		--compose "$(FREERADIUS_MULTI_SERVER_TESTS_BASE_PATH_ABS)/environments/docker-compose/env-5hs-autoaccept.yml" \
 		--test "$(FREERADIUS_MULTI_SERVER_TESTS_BASE_PATH_ABS)/test-5hs-autoaccept.yml" \
 		--use-files \
@@ -85,7 +93,7 @@ test-5hs-autoaccept-5min: 5hs-autoaccept-env-setup
 	echo "INFO: Running test-5hs-autoaccept test using framework"; \
 	DATA_PATH="$(FREERADIUS_MULTI_SERVER_TESTS_BASE_PATH_ABS)/environments/configs" \
 	make test-framework \
-		-- -x -v \
+		-- -x $(VERBOSE_ARG) \
 		--compose "$(FREERADIUS_MULTI_SERVER_TESTS_BASE_PATH_ABS)/environments/docker-compose/env-5hs-autoaccept.yml" \
 		--test "$(FREERADIUS_MULTI_SERVER_TESTS_BASE_PATH_ABS)/test-5hs-autoaccept-5min.yml" \
 		--use-files \
@@ -153,7 +161,7 @@ test-1p-2hs-autoaccept: 1p-2hs-autoaccept-env-setup
 	echo "INFO: Running test-1p-2hs-autoaccept test using framework"; \
 	DATA_PATH="$(FREERADIUS_MULTI_SERVER_TESTS_BASE_PATH_ABS)/environments/configs" \
 	make test-framework \
-		-- -x -v \
+		-- -x $(VERBOSE_ARG) \
 		--compose "$(FREERADIUS_MULTI_SERVER_TESTS_BASE_PATH_ABS)/environments/docker-compose/env-1p-2hs-autoaccept.yml" \
 		--test "$(FREERADIUS_MULTI_SERVER_TESTS_BASE_PATH_ABS)/test-1p-2hs-autoaccept.yml" \
 		--use-files \
@@ -169,7 +177,7 @@ test-1p-2hs-autoaccept-5min: 1p-2hs-autoaccept-env-setup
 	echo "INFO: Running test-1p-2hs-autoaccept-5min test using framework"; \
 	DATA_PATH="$(FREERADIUS_MULTI_SERVER_TESTS_BASE_PATH_ABS)/environments/configs" \
 	make test-framework \
-		-- -x -v \
+		-- -x $(VERBOSE_ARG) \
 		--compose "$(FREERADIUS_MULTI_SERVER_TESTS_BASE_PATH_ABS)/environments/docker-compose/env-1p-2hs-autoaccept.yml" \
 		--test "$(FREERADIUS_MULTI_SERVER_TESTS_BASE_PATH_ABS)/test-1p-2hs-autoaccept-5min.yml" \
 		--use-files \

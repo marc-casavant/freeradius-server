@@ -500,51 +500,58 @@ static int xlat_config_escape(UNUSED request_t *request, fr_value_box_t *vb, UNU
 {
 	static char const	disallowed[] = "%{}\\'\"`";
 	size_t 			outmax = vb->vb_length * 3;
-	size_t			outlen = 0;
-	char 			escaped[outmax + 1];
+	char 			*escaped;
 	char const		*in, *end;
-	char			*out = escaped;
+	char			*out;
+
+	if (!vb->vb_length) return 0;
 
 	fr_assert(vb->type == FR_TYPE_STRING);
-	in = vb->vb_strvalue;
-	end = in + vb->vb_length;
 
-	do {
+	escaped = out = talloc_array(vb, char, outmax + 1);
+	if (!escaped) return -1;
+
+	end = escaped + outmax;
+
+	for (in = vb->vb_strvalue; in < (vb->vb_strvalue + vb->vb_length); in++) {
 		/*
 		 *	Non-printable characters get replaced with their
 		 *	mime-encoded equivalents.
 		 */
-		if ((in[0] < 32)) {
-			snprintf(out, outlen, "=%02X", (unsigned char) in[0]);
+		if (in[0] < 32) {
+			snprintf(out, (size_t) (end - escaped), "=%02X", (unsigned char) in[0]);
 			out += 3;
-			outlen += 3;
 			continue;
 		}
+
 		if (strchr(disallowed, *in) != NULL) {
 			out[0] = '\\';
 			out[1] = *in;
 			out += 2;
-			outlen += 2;
 			continue;
 		}
+
 		/*
 		 *	Allowed character.
 		 */
 		*out = *in;
 		out++;
-		outlen++;
-	} while (++in < end);
+	}
 	*out = '\0';
 
 	/*
-	 *	If the output length is greater than the input length
-	 *	something has been escaped - replace the original string
+	 *	No change - do nothing.
 	 */
-	if (outlen > vb->vb_length) {
-		char	*outbuff;
-		if (fr_value_box_bstr_realloc(vb, &outbuff, vb, outlen) < 0) return -1;
-		memcpy(outbuff, escaped, outlen);
+	if ((size_t) (out - escaped) == vb->vb_length) {
+		talloc_free(escaped);
+		return 0;
 	}
+
+	/*
+	 *	Replace the original string.
+	 */
+	(void) fr_value_box_bstrndup(vb, vb, vb->enumv, escaped, (size_t) (out - escaped), vb->tainted);
+	talloc_free(escaped);
 
 	return 0;
 
@@ -827,15 +834,15 @@ void main_config_name_set_default(main_config_t *config, char const *name, bool 
 /** Set the global radius config directory.
  *
  * @param[in] config	to alter.
- * @param[in] name	to set as dir root e.g. /usr/local/etc/raddb.
+ * @param[in] name	to set as main configuration directory.
  */
-void main_config_raddb_dir_set(main_config_t *config, char const *name)
+void main_config_confdir_set(main_config_t *config, char const *name)
 {
-	if (config->raddb_dir) {
-		talloc_const_free(config->raddb_dir);
-		config->raddb_dir = NULL;
+	if (config->confdir) {
+		talloc_const_free(config->confdir);
+		config->confdir = NULL;
 	}
-	if (name) config->raddb_dir = talloc_typed_strdup(config, name);
+	if (name) config->confdir = talloc_typed_strdup(config, name);
 }
 
 /** Clean up the semaphore when the main config is freed
@@ -907,7 +914,7 @@ int main_config_exclusive_proc(main_config_t *config)
 		}
 		MEM(path = talloc_typed_strdup(config, config->pid_file));
 	}  else {
-		MEM(path = talloc_asprintf(config, "%s/%s.conf", config->raddb_dir, config->name));
+		MEM(path = talloc_asprintf(config, "%s/%s.conf", config->confdir, config->name));
 	}
 
 #ifdef HAVE_SEMAPHORES
@@ -984,7 +991,7 @@ main_config_t *main_config_alloc(TALLOC_CTX *ctx)
 	 *	Set the defaults from compile time arguments
 	 *	these can be overridden later on the command line.
 	 */
-	main_config_raddb_dir_set(config, RADDBDIR);
+	main_config_confdir_set(config, CONFDIR);
 	main_config_dict_dir_set(config, DICTDIR);
 
 	main_config = config;
@@ -1018,15 +1025,15 @@ int main_config_init(main_config_t *config)
 	 */
 	xlat_func_init();
 
-	if (stat(config->raddb_dir, &statbuf) < 0) {
-		ERROR("Error checking raddb_dir \"%s\": %s", config->raddb_dir, fr_syserror(errno));
+	if (stat(config->confdir, &statbuf) < 0) {
+		ERROR("Error checking confdir \"%s\": %s", config->confdir, fr_syserror(errno));
 		return -1;
 	}
 
 #ifdef S_IWOTH
 	if ((statbuf.st_mode & S_IWOTH) != 0) {
 		ERROR("Configuration directory %s is globally writable. "
-		      "Refusing to start due to insecure configuration", config->raddb_dir);
+		      "Refusing to start due to insecure configuration", config->confdir);
 		return -1;
 	}
 #endif
@@ -1034,7 +1041,7 @@ int main_config_init(main_config_t *config)
 #if 0 && defined(S_IROTH)
 	if (statbuf.st_mode & S_IROTH != 0) {
 		ERROR("Configuration directory %s is globally readable. "
-		      "Refusing to start due to insecure configuration", config->raddb_dir);
+		      "Refusing to start due to insecure configuration", config->confdir);
 		return -1;
 	}
 #endif
@@ -1094,9 +1101,9 @@ int main_config_init(main_config_t *config)
 
 	/*
 	 *	@todo - not quite done yet... these dictionaries have
-	 *	to be loaded from raddb_dir.  But the
+	 *	to be loaded from confdir.  But the
 	 *	fr_dict_autoload_t has a base_dir pointer
-	 *	there... it's probably best to pass raddb_dir into
+	 *	there... it's probably best to pass confdir into
 	 *	fr_dict_autoload() and have it use that instead.
 	 *
 	 *	Once that's done, the proto_foo dictionaries SHOULD be
@@ -1115,8 +1122,8 @@ int main_config_init(main_config_t *config)
 	if (fr_debug_lvl) cf_md5_init();
 
 	/* Read the configuration file */
-	snprintf(buffer, sizeof(buffer), "%.200s/%.50s.conf", config->raddb_dir, config->name);
-	if (cf_file_read(cs, buffer) < 0) {
+	snprintf(buffer, sizeof(buffer), "%.200s/%.50s.conf", config->confdir, config->name);
+	if (cf_file_read(cs, buffer, true) < 0) {
 		ERROR("Error reading or parsing %s", buffer);
 		goto failure;
 	}

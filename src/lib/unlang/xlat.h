@@ -435,9 +435,6 @@ bool		xlat_to_string(TALLOC_CTX *ctx, char **str, xlat_exp_head_t **head);
 
 int		xlat_resolve(xlat_exp_head_t *head, xlat_res_rules_t const *xr_rules);
 
-void		xlat_debug_attr_list(request_t *request, fr_pair_list_t const *list);
-void		xlat_debug_attr_vp(request_t *request, fr_pair_t *vp, tmpl_t const *vpt);
-
 xlat_action_t	xlat_transparent(UNUSED TALLOC_CTX *ctx, fr_dcursor_t *out,
 				 UNUSED xlat_ctx_t const *xctx,
 				 request_t *request, fr_value_box_list_t *args);
@@ -527,6 +524,8 @@ xlat_action_t	unlang_xlat_yield_to_retry(request_t *request, xlat_func_t resume,
  */
 int		xlat_protocols_register(void);
 int		xlat_global_init(void);
+
+void		xlat_arg_copy_out(TALLOC_CTX *ctx, fr_dcursor_t *cursor, fr_value_box_list_t *in, fr_value_box_t *vb);
 
 #ifdef __cplusplus
 }

@@ -872,15 +872,16 @@ static void *connection_get_internal(fr_pool_t *pool, request_t *request, bool s
 			pool->state.last_at_max = now;
 		}
 
-		pthread_mutex_unlock(&pool->mutex);
 		if (!fr_rate_limit_enabled() || complain) {
 			ERROR("No connections available and at max connection limit");
+
 			/*
 			 *	Must be done inside the mutex, reconnect callback
 			 *	may modify args.
 			 */
 			fr_pool_trigger(pool, "none");
 		}
+		pthread_mutex_unlock(&pool->mutex);
 
 		return NULL;
 	}
@@ -1437,7 +1438,7 @@ void fr_pool_connection_release(fr_pool_t *pool, request_t *request, void *conn)
 	    	pool->state.last_held_min = this->last_released;
 	}
 
-	if (fr_time_delta_ispos(pool->held_trigger_min) &&
+	if (fr_time_delta_ispos(pool->held_trigger_max) &&
 	    (fr_time_delta_gt(held, pool->held_trigger_max)) &&
 	    (fr_time_delta_gteq(fr_time_sub(this->last_released, pool->state.last_held_max), fr_time_delta_from_sec(1)))) {
 	    	trigger_max = true;

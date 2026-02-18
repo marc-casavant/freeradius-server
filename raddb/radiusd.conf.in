@@ -32,7 +32,7 @@
 #  to _post the output of `radiusd -X`_.
 
 #
-#  ## Default instance
+#  == Default instance
 #
 #  The location of other config files and logfiles are declared
 #  in this file.
@@ -49,7 +49,7 @@
 #  The `unlang` policy language can be used to create complex
 #  if / else policies.  For more information, see
 #
-#  https://www.freeradius.org/documentation/freeradius-server/RADIUSD_DOC_VERSION/
+#  https://www.freeradius.org/documentation/freeradius-server/@RADIUSD_DOC_VERSION@/
 #
 #  NOTE: The paths used for installed server files. They are set
 #  automatically at install time and will not normally need to be
@@ -61,7 +61,7 @@ sysconfdir = @sysconfdir@
 localstatedir = @localstatedir@
 sbindir = @sbindir@
 logdir = @logdir@
-raddbdir = @raddbdir@
+confdir = @confdir@
 radacctdir = @radacctdir@
 
 #
@@ -74,7 +74,6 @@ name = radiusd
 #
 #  Location of config and logfiles.
 #
-confdir = ${raddbdir}
 modconfdir = ${confdir}/mods-config
 certdir = ${confdir}/certs
 cadir   = ${confdir}/certs
@@ -163,7 +162,7 @@ pidfile = ${run_dir}/${name}.pid
 #
 #  An example panic action for opening an automated session in GDB would be:
 #
-#panic_action = "gdb -silent -x ${raddbdir}/panic.gdb %e %p 2>&1 | tee ${logdir}/gdb-${name}-%p.log"
+#panic_action = "gdb -silent -x ${confdir}/panic.gdb %e %p 2>&1 | tee ${logdir}/gdb-${name}-%p.log"
 #
 #  NOTE: That command can be used on a production system.
 #
@@ -456,7 +455,7 @@ ENV {
 	#  This also permits the server to use those credentials when it is
 	#  run in debug mode.
 	#
-#	KRB5_CLIENT_KTNAME = ${raddbdir}/radiusd.keytab
+#	KRB5_CLIENT_KTNAME = ${confdir}/radiusd.keytab
 
 	#
 	#  `LD_PRELOAD` is special.  It is normally set before the
@@ -673,7 +672,7 @@ global {
 #  Some of these flags can also be passed on the command line as
 #  `-S flag=value`.
 #
-#  Dictionary migration instructions can be found in `${raddbdir}/dictionary`.
+#  Dictionary migration instructions can be found in `${confdir}/dictionary`.
 #
 migrate {
 }
@@ -763,7 +762,7 @@ policy {
 #  match the regular expression: /[a-zA-Z0-9_.]+/
 #
 #  It allows you to define new virtual servers simply by placing
-#  a file into the raddb/sites-enabled/ directory.
+#  a file into the sites-enabled/ directory.
 #
 #  All of the other configuration sections like:
 #
@@ -773,7 +772,7 @@ policy {
 #
 #  Have been moved to the the file:
 #
-#  `raddb/sites-available/default`
+#  `sites-available/default`
 #
 #  This is the `default` virtual server that has the same
 #  configuration as in version 1.0.x and 1.1.x.  The default
@@ -782,6 +781,6 @@ policy {
 #
 #  For more documentation on virtual servers, see:
 #
-#  `raddb/sites-available/index.adoc`
+#  `sites-available/index.adoc`
 #
 $INCLUDE sites-enabled/

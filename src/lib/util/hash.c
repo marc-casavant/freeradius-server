@@ -181,8 +181,9 @@ static uint32_t parent_of(uint32_t key)
 }
 
 
-static fr_hash_entry_t *list_find(fr_hash_table_t *ht,
-				  fr_hash_entry_t *head, uint32_t reversed, void const *data)
+static CC_NO_UBSAN(undefined)
+fr_hash_entry_t *list_find(fr_hash_table_t *ht,
+			   fr_hash_entry_t *head, uint32_t reversed, void const *data)
 {
 	fr_hash_entry_t *cur;
 
@@ -205,7 +206,8 @@ static fr_hash_entry_t *list_find(fr_hash_table_t *ht,
 /*
  *	Inserts a new entry into the list, in order.
  */
-static bool list_insert(fr_hash_table_t *ht,
+static CC_NO_UBSAN(undefined)
+bool list_insert(fr_hash_table_t *ht,
 		        fr_hash_entry_t **head, fr_hash_entry_t *node)
 {
 	fr_hash_entry_t **last, *cur;
@@ -519,8 +521,8 @@ bool fr_hash_table_insert(fr_hash_table_t *ht, void const *data)
  * @param[in] data 	to replace.  Will be passed to the
  *      		hashing function.
  * @return
- *      - 1 if data was replaced.
- *	- 0 if data was inserted.
+ *	- 1 if data was inserted (hash table grows)
+ *      - 0 if data was replaced (hash table doesn't grow)
  *      - -1 if we failed to replace data
  */
 CC_NO_UBSAN(function) /* UBSAN: false positive - htrie call with first argument of void * trips --fsanitize=function */
@@ -628,15 +630,18 @@ void *fr_hash_table_iter_next(fr_hash_table_t *ht, fr_hash_iter_t *iter)
 	uint32_t	i;
 
 	/*
-	 *	Return the next element in the bucket
+	 *	Return the next element in the bucket.
 	 */
-	if (iter->node != &ht->null) {
-		node = iter->node;
-		iter->node = node->next;
+	if (iter->next != &ht->null) {
+		node = iter->next;
+		iter->next = node->next;
 
 		return node->data;
 	}
 
+	/*
+	 *	We've wrapped around to bucket 0 again.  That means we're done.
+	 */
 	if (iter->bucket == 0) return NULL;
 
 	/*
@@ -655,7 +660,7 @@ void *fr_hash_table_iter_next(fr_hash_table_t *ht, fr_hash_iter_t *iter)
 			continue;	/* This bucket was empty too... */
 		}
 
-		iter->node = node->next;		/* Store the next one to examine */
+		iter->next = node->next;		/* Store the next one to examine */
 		iter->bucket = i;
 		return node->data;
 	}
@@ -677,7 +682,7 @@ void *fr_hash_table_iter_next(fr_hash_table_t *ht, fr_hash_iter_t *iter)
 void *fr_hash_table_iter_init(fr_hash_table_t *ht, fr_hash_iter_t *iter)
 {
 	iter->bucket = ht->num_buckets;
-	iter->node = &ht->null;
+	iter->next = &ht->null;
 
 	return fr_hash_table_iter_next(ht, iter);
 }
@@ -851,8 +856,8 @@ uint32_t fr_hash_update(void const *data, size_t size, uint32_t hash)
 
  	q = p + size;
 	while (p < q) {
-		hash *= FNV_MAGIC_PRIME;
 		hash ^= (uint32_t) (*p++);
+		hash *= FNV_MAGIC_PRIME;
 	}
 
 	return hash;
@@ -885,6 +890,61 @@ uint32_t fr_hash_case_string(char const *p)
 		/* coverity[overflow_const] */
 		hash *= FNV_MAGIC_PRIME;
 		hash ^= (uint32_t) (tolower((uint8_t) *p++));
+	}
+
+	return hash;
+}
+
+/*
+ *	64-bit variants of the above functions/
+ */
+#undef FNV_MAGIC_INIT
+#undef FNV_MAGIC_PRIME
+#define FNV_MAGIC_INIT ((uint64_t) 0xcbf29ce484222325)
+#define FNV_MAGIC_PRIME ((uint64_t) 0x01000193)
+
+/*
+ *	A 64-bit version of the above hash
+ */
+uint64_t fr_hash64(void const *data, size_t size)
+{
+	uint8_t const *p = data;
+	uint8_t const *q = p + size;
+	uint64_t      hash = FNV_MAGIC_INIT;
+
+	/*
+	 *	FNV-1 hash each octet in the buffer
+	 */
+	while (p != q) {
+		/*
+		 *	XOR the 8-bit quantity into the bottom of
+		 *	the hash.
+		 */
+		hash ^= (uint32_t) (*p++);
+
+		/*
+		 *	Multiple by 32-bit magic FNV prime, mod 2^32
+		 */
+		hash *= FNV_MAGIC_PRIME;
+    }
+
+    return hash;
+}
+
+/*
+ *	Continue hashing data.
+ */
+uint64_t fr_hash64_update(void const *data, size_t size, uint64_t hash)
+{
+	uint8_t const *p = data;
+	uint8_t const *q;
+
+	if (size == 0) return hash;	/* Avoid ubsan issues with access NULL pointer */
+
+ 	q = p + size;
+	while (p < q) {
+		hash ^= (uint64_t) (*p++);
+		hash *= FNV_MAGIC_PRIME;
 	}
 
 	return hash;

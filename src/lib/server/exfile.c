@@ -32,6 +32,7 @@
 #include <freeradius-devel/util/misc.h>
 #include <freeradius-devel/util/perm.h>
 #include <freeradius-devel/util/syserror.h>
+#include <freeradius-devel/util/time.h>
 
 #include <fcntl.h>
 
@@ -63,6 +64,8 @@ typedef struct {
 struct exfile_s {
 	uint32_t		max_entries;		//!< How many file descriptors we keep track of.
 	fr_time_delta_t		max_idle;		//!< Maximum idle time for a descriptor.
+							///< If this is zero, the descriptor will be closed
+							///< immediately after it is unlocked.
 	fr_time_t      		last_cleaned;
 	pthread_mutex_t		mutex;
 	exfile_entry_t		*entries;
@@ -216,7 +219,7 @@ exfile_t *exfile_init(TALLOC_CTX *ctx, uint32_t max_entries, fr_time_delta_t max
 void exfile_enable_triggers(exfile_t *ef, CONF_SECTION *conf, char const *trigger_prefix, fr_pair_list_t *trigger_args)
 {
 	talloc_const_free(ef->trigger_prefix);
-	MEM(ef->trigger_prefix = trigger_prefix ? talloc_typed_strdup(ef, trigger_prefix) : "");
+	MEM(ef->trigger_prefix = trigger_prefix ? talloc_typed_strdup(ef, trigger_prefix) : talloc_typed_strdup(ef, ""));
 
 	fr_pair_list_free(&ef->trigger_args);
 
@@ -238,6 +241,7 @@ static int exfile_open_mkdir(exfile_t *ef, char const *filename, mode_t permissi
 
 	fd = open(filename, O_RDWR | O_CREAT | flags, permissions);
 	if (fd < 0) {
+		int dirfd;
 		mode_t dirperm;
 		char *p, *dir;
 
@@ -264,14 +268,16 @@ static int exfile_open_mkdir(exfile_t *ef, char const *filename, mode_t permissi
 		if ((dirperm & 0060) != 0) dirperm |= 0010;
 		if ((dirperm & 0006) != 0) dirperm |= 0001;
 
-		if (fr_mkdir(NULL, dir, -1, dirperm, NULL, NULL) < 0) {
+		if (fr_mkdir(&dirfd, dir, -1, dirperm, NULL, NULL) < 0) {
 			fr_strerror_printf("Failed to create directory %s: %s", dir, fr_syserror(errno));
 			talloc_free(dir);
 			return -1;
 		}
-		talloc_free(dir);
 
-		fd = open(filename, O_RDWR | O_CREAT | flags, permissions);
+		fd = openat(dirfd, p+1, O_RDWR | O_CREAT | flags, permissions);
+		talloc_free(dir);
+		close(dirfd);
+
 		if (fd < 0) {
 			fr_strerror_printf("Failed to open file %s: %s", filename, fr_syserror(errno));
 			return -1;
@@ -556,6 +562,17 @@ static int exfile_close_lock(exfile_t *ef, int fd)
 
 		(void) lseek(ef->entries[i].fd, 0, SEEK_SET);
 		(void) rad_unlockfd(ef->entries[i].fd, 0);
+
+		/*
+		 *	If max idle is 0, then clean up the file immediately
+		 *	this is mostly used for testing.
+		 */
+		if (fr_time_delta_eq(ef->max_idle, fr_time_delta_from_sec(0))) {
+			exfile_cleanup_entry(ef, &ef->entries[i]);
+			pthread_mutex_unlock(&(ef->mutex));
+			return 0;
+		}
+
 		pthread_mutex_unlock(&(ef->mutex));
 
 		exfile_trigger(ef, &ef->entries[i], EXFILE_TRIGGER_RELEASE);

@@ -203,7 +203,7 @@ typedef struct {
 typedef struct {
 	fr_dict_t 		*dict;			//!< Dictionary to "reset" to.
 	fr_dict_gctx_t const	*dict_gctx;		//!< Dictionary gctx to "reset" to.
-	char const		*raddb_dir;
+	char const		*confdir;
 	char const		*dict_dir;
 	char const		*fuzzer_dir;		//!< Where to write fuzzer files.
 	CONF_SECTION		*features;		//!< Enabled features.
@@ -4031,7 +4031,7 @@ static void usage(char const *name)
 {
 	INFO("usage: %s [options] (-|<filename>[:<lines>] [ <filename>[:<lines>]])", name);
 	INFO("options:");
-	INFO("  -d <raddb>         Set user dictionary path (defaults to " RADDBDIR ").");
+	INFO("  -d <confdir>       Set user dictionary path (defaults to " CONFDIR ").");
 	INFO("  -D <dictdir>       Set main dictionary path (defaults to " DICTDIR ").");
 	INFO("  -x                 Debugging mode.");
 	INFO("  -f                 Print features.");
@@ -4313,7 +4313,7 @@ int main(int argc, char *argv[])
 	bool			exit_now = false;
 
 	command_config_t	config = {
-					.raddb_dir = RADDBDIR,
+					.confdir = CONFDIR,
 					.dict_dir = DICTDIR
 				};
 
@@ -4372,7 +4372,7 @@ int main(int argc, char *argv[])
 			break;
 
 		case 'd':
-			config.raddb_dir = optarg;
+			config.confdir = optarg;
 			break;
 
 		case 'D':
@@ -4539,7 +4539,7 @@ int main(int argc, char *argv[])
 	/*
 	 *	Read test commands from stdin
 	 */
-	if (argc < 2) {
+	if ((argc < 2) && !receipt_dir) {
 		if (write_filename) {
 			ERROR("Can only use '-w' with input files");
 			EXIT_WITH_FAILURE;
@@ -4582,7 +4582,7 @@ int main(int argc, char *argv[])
 				if ((ret != EXIT_SUCCESS) || exit_now) break;
 			}
 
-	} else {
+	} else if (argc > 1) {
 		int i;
 
 		/*
@@ -4592,7 +4592,7 @@ int main(int argc, char *argv[])
 			ret = process_path(&exit_now, autofree, &config, argv[i]);
 			if ((ret != EXIT_SUCCESS) || exit_now) break;
 		}
-	}
+	} /* nothing to do */
 
 	/*
 	 *	Try really hard to free any allocated

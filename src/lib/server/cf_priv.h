@@ -60,6 +60,8 @@ struct cf_item {
 
 	CONF_ITEM_TYPE		type;		//!< Whether the config item is a config_pair, conf_section or cf_data.
 
+	bool			parsed;		//!< Was this item used during parsing?
+	bool			referenced;	//!< Was this item referenced in the config?
 	int			lineno;		//!< The line number the config item began on.
 	char const		*filename;	//!< The file the config item was parsed from.
 };
@@ -78,9 +80,7 @@ struct cf_pair {
 	fr_token_t		rhs_quote;	//!< Value Quoting style T_(DOUBLE|SINGLE|BACK)_QUOTE_STRING or T_BARE_WORD.
 
 	bool			pass2;		//!< do expansion in pass2.
-	bool			parsed;		//!< Was this item used during parsing?
 	bool			printed;	//!< Was this item printed already in debug mode?
-	bool			referenced;	//!< Was this item referenced in the config?
 };
 
 typedef enum {
@@ -148,7 +148,7 @@ typedef struct {
  *				Will be declared in the scope of the loop.
  */
 #define cf_item_foreach(_ci, _iter) \
-	for (CONF_ITEM *_iter = fr_dlist_head(&(_ci)->children); _iter; _iter = fr_dlist_next(&(_ci)->children, _iter))
+	for (CONF_ITEM *JOIN(_next,_iter), *_iter = fr_dlist_head(&(_ci)->children); JOIN(_next,_iter) = fr_dlist_next(&(_ci)->children, _iter), _iter != NULL; _iter = JOIN(_next,_iter))
 
 /** Iterate over the contents of a list
  *

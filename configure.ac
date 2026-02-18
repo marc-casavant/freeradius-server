@@ -740,7 +740,7 @@ AC_MSG_RESULT($radacctdir)
 dnl #
 dnl #  extra argument: --with-raddbdir
 dnl #
-raddbdir='${sysconfdir}/raddb'
+confdir='${sysconfdir}/raddb'
 AC_MSG_CHECKING(raddbdir)
 AC_ARG_WITH(raddbdir,
 [  --with-raddbdir=DIR     directory for config files [SYSCONFDIR/raddb] ],
@@ -751,15 +751,15 @@ AC_ARG_WITH(raddbdir,
   yes)
     ;;
   [[\\/$]]* | ?:[[\\/]]* )
-    raddbdir="$withval"
+    confdir="$withval"
     ;;
   *)
     AC_MSG_ERROR([expected an absolute directory name for --with-raddbdir: $withval])
     ;;
   esac ]
 )
-AC_SUBST(raddbdir)
-AC_MSG_RESULT($raddbdir)
+AC_SUBST(confdir)
+AC_MSG_RESULT($confdir)
 
 dnl #
 dnl #  extra argument: --with-dictdir
@@ -808,9 +808,6 @@ AC_ARG_WITH(mibdir,
 )
 AC_SUBST(mibdir)
 AC_MSG_RESULT($mibdir)
-
-modconfdir='${raddbdir}/mods-config'
-AC_SUBST(modconfdir)
 
 dnl #############################################################
 dnl #
@@ -2625,7 +2622,6 @@ dnl #  And finally, output the results.
 dnl #
 dnl #############################################################
 AC_CONFIG_COMMANDS([stamp-h], [echo timestamp > src/include/stamp-h])
-AC_CONFIG_COMMANDS([build-radpaths-h], [(cd ./src/include && /bin/sh ./build-radpaths-h)])
 AC_CONFIG_COMMANDS([main-chmod], [(cd ./src/bin && chmod +x checkrad radtest)])
 AC_CONFIG_COMMANDS([scripts-chmod], [(cd ./scripts && chmod +x rc.radiusd cron/radiusd.cron.daily cron/radiusd.cron.monthly util/cryptpasswd)])
 
@@ -2637,7 +2633,6 @@ AC_SUBST(INSTALLSTRIP)
 
 AC_CONFIG_FILES([\
   ./Make.inc \
-  ./src/include/build-radpaths-h \
   ./src/bin/checkrad \
   ./src/bin/radtest \
   ./scripts/rc.radiusd \

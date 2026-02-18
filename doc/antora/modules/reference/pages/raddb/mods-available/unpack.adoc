@@ -14,9 +14,9 @@ NOTE: The module is useful only for `xlat`.
 
 
 
-## Syntax
+== Syntax
 
-To use it, add it to the `raddb/mods-enabled/` directory.  Then,
+To use it, add it to the `mods-enabled/` directory.  Then,
 use it on the right-hand side of a variable assignment.
 
  %unpack(<data>, <offset>, <data_type>[, <repeat>])
@@ -45,7 +45,7 @@ must either be an integer or the special value of `'*'` to extract as many insta
 as can be from the input data.
 
 
-## Sample
+== Sample
 
 if we have `Class = 0x000001020304`, then
 
@@ -55,7 +55,7 @@ will unpack octets `4` and `5` as a `uint16`, which has value `0x0304`.
 
 
 
-## Configuration Settings
+== Configuration Settings
 
 This module takes no configuration.
 
@@ -67,5 +67,5 @@ unpack {
 }
 ```
 
-// Copyright (C) 2025 Network RADIUS SAS.  Licenced under CC-by-NC 4.0.
+// Copyright (C) 2026 Network RADIUS SAS.  Licenced under CC-by-NC 4.0.
 // This documentation was developed by Network RADIUS SAS.

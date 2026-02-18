@@ -416,11 +416,12 @@ TALLOC_CTX *talloc_page_aligned_pool(TALLOC_CTX *ctx, void **start, size_t *end_
 void *_talloc_realloc_zero(const void *ctx, void *ptr, size_t elem_size, unsigned count, const char *name)
 {
     size_t old_size = talloc_get_size(ptr);
-    size_t new_size = elem_size * count;
+    size_t new_size;
 
     void *new = _talloc_realloc_array(ctx, ptr, elem_size, count, name);
     if (!new) return NULL;
 
+    new_size = talloc_array_length((uint8_t *) new);
     if (new_size > old_size) {
         memset((uint8_t *)new + old_size, 0, new_size - old_size);
     }
@@ -653,6 +654,7 @@ char *talloc_bstr_realloc(TALLOC_CTX *ctx, char *in, size_t inlen)
 
 	if (!in) {
 		n = talloc_array(ctx, char, inlen + 1);
+		if (!n) return NULL;
 		n[0] = '\0';
 		return n;
 	}
@@ -982,8 +984,9 @@ TALLOC_CTX *talloc_autofree_context_global(void)
 
 	if (!af) {
 		af = talloc_init_const("global_autofree_context");
-		talloc_set_destructor(af, _autofree_global_destructor);
 		if (unlikely(!af)) return NULL;
+
+		talloc_set_destructor(af, _autofree_global_destructor);
 
 		fr_atexit_global(_autofree_on_exit, af);
 		global_ctx = af;

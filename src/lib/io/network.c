@@ -465,9 +465,9 @@ static void fr_network_suspend(fr_network_t *nr)
 
 	if (nr->suspended) return;
 
-	for (s = fr_rb_iter_init_inorder(&iter, nr->sockets);
+	for (s = fr_rb_iter_init_inorder(nr->sockets, &iter);
 	     s != NULL;
-	     s = fr_rb_iter_next_inorder(&iter)) {
+	     s = fr_rb_iter_next_inorder(nr->sockets, &iter)) {
 		fr_event_filter_update(s->nr->el, s->listen->fd, FR_EVENT_FILTER_IO, pause_read);
 	}
 	nr->suspended = true;
@@ -484,9 +484,9 @@ static void fr_network_unsuspend(fr_network_t *nr)
 
 	if (!nr->suspended) return;
 
-	for (s = fr_rb_iter_init_inorder(&iter, nr->sockets);
+	for (s = fr_rb_iter_init_inorder(nr->sockets, &iter);
 	     s != NULL;
-	     s = fr_rb_iter_next_inorder(&iter)) {
+	     s = fr_rb_iter_next_inorder(nr->sockets, &iter)) {
 		fr_event_filter_update(s->nr->el, s->listen->fd, FR_EVENT_FILTER_IO, resume_read);
 	}
 	nr->suspended = false;
@@ -988,12 +988,16 @@ next_message:
 		 *	There are leftover bytes in the buffer, feed
 		 *	them to the next round of reading.
 		 */
-		next = (fr_channel_data_t *) fr_message_alloc_reserve(s->ms, &cd->m, data_size, s->leftover,
-								      s->listen->default_message_size);
-		if (!next) {
-			PERROR("Failed reserving partial packet.");
-			// @todo - probably close the socket...
-			fr_assert(0 == 1);
+		if (s->leftover) {
+			next = (fr_channel_data_t *) fr_message_alloc_reserve(s->ms, &cd->m, data_size, s->leftover,
+									      s->listen->default_message_size);
+			if (!next) {
+				PERROR("Failed reserving partial packet.");
+				// @todo - probably close the socket...
+				fr_assert(0 == 1);
+			}
+		} else {
+			next = NULL;
 		}
 	}
 
@@ -1401,7 +1405,7 @@ static int fr_network_listen_add_self(fr_network_t *nr, fr_listen_t *li)
 	 */
 	s->ms = fr_message_set_create(s, num_messages,
 				      sizeof(fr_channel_data_t),
-				      size);
+				      size, false);
 	if (!s->ms) {
 		PERROR("Failed creating message buffers for network IO");
 		talloc_free(s);
@@ -1489,7 +1493,7 @@ static void fr_network_directory_callback(void *ctx, void const *data, size_t da
 
 	s->ms = fr_message_set_create(s, num_messages,
 				      sizeof(fr_channel_data_t),
-				      s->listen->default_message_size * s->listen->num_messages);
+				      s->listen->default_message_size * s->listen->num_messages, false);
 	if (!s->ms) {
 		PERROR("Failed creating message buffers for directory IO");
 		talloc_free(s);
@@ -2083,9 +2087,9 @@ static int cmd_socket_list(FILE *fp, UNUSED FILE *fp_err, void *ctx, UNUSED fr_c
 
 	// @todo - note that this isn't thread-safe!
 
-	for (s = fr_rb_iter_init_inorder(&iter, nr->sockets);
+	for (s = fr_rb_iter_init_inorder(nr->sockets, &iter);
 	     s != NULL;
-	     s = fr_rb_iter_next_inorder(&iter)) {
+	     s = fr_rb_iter_next_inorder(nr->sockets, &iter)) {
 		if (!s->listen->app_io->get_name) {
 			fprintf(fp, "%s\n", s->listen->app_io->common.name);
 		} else {

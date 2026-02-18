@@ -547,7 +547,7 @@ static int8_t fr_event_fd_cmp(void const *one, void const *two)
  */
 uint64_t fr_event_list_num_fds(fr_event_list_t *el)
 {
-	if (unlikely(!el)) return -1;
+	if (unlikely(!el)) return 0;
 
 	return fr_rb_num_elements(el->fds);
 }
@@ -559,7 +559,7 @@ uint64_t fr_event_list_num_fds(fr_event_list_t *el)
  */
 uint64_t fr_event_list_num_timers(fr_event_list_t *el)
 {
-	if (unlikely(!el)) return -1;
+	if (unlikely(!el)) return 0;
 
 	return fr_timer_list_num_events(el->pub.tl);
 }
@@ -699,7 +699,7 @@ static ssize_t fr_event_build_evset(
 			map++;
 		} while (1);
 
-		if (out > end) {
+		if (out >= end) {
 			fr_strerror_const("Out of memory to store kevent filters");
 			return -1;
 		}
@@ -1715,7 +1715,7 @@ unsigned int fr_event_list_reap_signal(fr_event_list_t *el, fr_time_delta_t time
 
 		if (unlikely(kq < 0)) goto force;
 
-		fr_dlist_foreach_safe(&el->pid_to_reap, fr_event_pid_reap_t, i) {
+		fr_dlist_foreach(&el->pid_to_reap, fr_event_pid_reap_t, i) {
 			if (!i->pid_ev) {
 				EVENT_DEBUG("%p - %s - Reaper already called (logic error)... - %p",
 					    el, __FUNCTION__, i);
@@ -1748,7 +1748,7 @@ unsigned int fr_event_list_reap_signal(fr_event_list_t *el, fr_time_delta_t time
 				continue;
 			}
 			waiting++;
-		}}
+		}
 
 		/*
 		 *	Keep draining process exits as they come in...

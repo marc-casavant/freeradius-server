@@ -153,7 +153,9 @@ RESUME(check_offer_ack_options)
 		fr_pair_t 	*reply_vp;
 		int		ret;
 		MEM((ret = pair_update_reply(&reply_vp, attr_dhcp_option_82)) >= 0);
-		if (ret == 0) MEM(fr_pair_list_copy(reply_vp, &reply_vp->vp_group, &vp->vp_group));
+		if ((ret == 0) && (fr_pair_list_num_elements(&vp->vp_group) > 0)) {
+			MEM(fr_pair_list_copy(reply_vp, &reply_vp->vp_group, &vp->vp_group));
+		}
 	}
 
 	return CALL_RESUME(send_generic);
@@ -237,7 +239,7 @@ static fr_process_state_t const process_state[] = {
 		.default_reply = FR_DHCP_DO_NOT_RESPOND,
 		.recv = recv_generic,
 		.resume = resume_recv_generic,
-		.section_offset = PROCESS_CONF_OFFSET(request),
+		.section_offset = PROCESS_CONF_OFFSET(decline),
 	},
 
 	[FR_DHCP_ACK] = {

@@ -117,7 +117,7 @@ static NEVER_RETURNS void usage(void)
 	DEBUG("Send a DHCP request with provided RADIUS attrs and output response.");
 
 	DEBUG("  <command>              One of: discover, request, decline, release, inform; or: auto.");
-	DEBUG("  -d <directory>         Set the directory where the dictionaries are stored (defaults to " RADDBDIR ").");
+	DEBUG("  -d <directory>         Set the directory where the dictionaries are stored (defaults to " CONFDIR ").");
 	DEBUG("  -D <dictdir>           Set main dictionary directory (defaults to " DICTDIR ").");
 	DEBUG("  -f <file>              Read packets from file, not stdin.");
 	DEBUG("  -i <interface>         Use this interface to send/receive at packet level on a raw socket.");
@@ -537,7 +537,7 @@ int main(int argc, char **argv)
 	static fr_ipaddr_t	client_ipaddr;
 
 	int			c;
-	char const		*raddb_dir = RADDBDIR;
+	char const		*confdir = CONFDIR;
 	char const		*dict_dir = DICTDIR;
 	char const		*filename = NULL;
 
@@ -564,7 +564,7 @@ int main(int argc, char **argv)
 			break;
 
 		case 'd':
-			raddb_dir = optarg;
+			confdir = optarg;
 			break;
 
 		case 'f':
@@ -617,7 +617,7 @@ int main(int argc, char **argv)
 		fr_exit(EXIT_FAILURE);
 	}
 
-	if (fr_dict_read(fr_dict_unconst(dict_freeradius), raddb_dir, FR_DICTIONARY_FILE) == -1) {
+	if (fr_dict_read(fr_dict_unconst(dict_freeradius), confdir, FR_DICTIONARY_FILE) == -1) {
 		fr_perror("dhcpclient");
 		fr_exit(EXIT_FAILURE);
 	}

@@ -22,13 +22,13 @@ Then, run the server.  This process will ensure that users can log
 in via PAP, CHAP, MS-CHAP, etc.  You should so test the server via
 `radtest` to verify that it works.
 
-## Editing this file
+== Editing this file
 
 Please read "man radiusd" before editing this file.  See the
 section titled DEBUGGING.  It outlines a method where you can
 quickly obtain the configuration you want, without running into
 trouble. And finally, the debug output can be complex. Please read
-https://wiki.freeradius.org/radiusd-X[debugging] to understand that output.
+https://www.freeradius.org/documentation/freeradius-server/4.0.0/debugging/radiusd_X.html
 
 The best way to configure the server for your local system is to
   *carefully* edit this file.  Most attempts to make large edits to
@@ -52,7 +52,7 @@ able to connect to the database, and to authenticate users.
 
 
 
-## The Virtual Server
+== The Virtual Server
 
 This is the `default` virtual server.
 
@@ -133,6 +133,14 @@ max:: The maximum number of ongoing sessions
 
 ```
 
+max_rounds:: The maximum number of message exchanges
+before the server gives up
+
+```
+#				max_rounds = 40
+
+```
+
 timeout:: How long to wait before expiring a
 session.
 
@@ -144,6 +152,33 @@ state value is received.
 
 ```
 #				timeout = 15
+
+```
+
+dedup_key:: Key to enforce only one active session per
+supplicant.
+
+Some supplicants may misbehave by starting many thousands
+of EAP sessions, but never finishing them.  These sessions
+can cause the server to hit 'max_sessions' very quickly.
+The 'timer_expire' configuration above does not help as
+much as it could, because the old (duplicate) session
+should be deleted as soon as the new one comes in.
+
+If you set the 'dedup_key' below, whenever the EAP module
+starts a new session, it will check for a previous session
+which has the same dedup key.  If a previous session
+is found, it is deleted.
+
+Setting this configuration item may cause issues if the
+same device uses multiple EAP sessions at the same time.
+But that device behavior should be rare to non-existent.
+
+The configuration item is commented out so that upgrades
+do not change existing behavior.
+
+```
+#				dedup_key = Calling-Station-Id
 			}
 		}
 
@@ -794,7 +829,7 @@ here, too.
 
 ```
 
-## Packet Processing sections
+== Packet Processing sections
 
 The sections below are called when a RADIUS packet has been
 received.
@@ -804,7 +839,7 @@ received.
 
 
 
-### Receive Access-Request packets
+=== Receive Access-Request packets
 
 ```
 recv Access-Request {
@@ -960,9 +995,7 @@ is located in `mods-config/files/authorize`.
 ```
 
 Look in an SQL database. The schema of the database is
-meant to mirror the `users` file.  For a full description
-of the module behavior, please see
-https://wiki.freeradius.org/modules/Rlm_sql
+meant to mirror the `users` file.
 
 ```
 	-sql
@@ -980,9 +1013,6 @@ module.
 
 The `ldap` module reads passwords and other attributes from
 an LDAP database.
-
-For a full description of the module behavior, please see
-https://wiki.freeradius.org/modules/Rlm_ldap
 
 ```
 	-ldap
@@ -1027,7 +1057,7 @@ modules get a chance to set Auth-Type for themselves.
 
 ```
 
-### Receive Status-Server packets
+=== Receive Status-Server packets
 
 
 This section is processed when the server receives a `Status-Server`
@@ -1045,7 +1075,7 @@ We are still here and responding.
 
 ```
 
-## Authentication Sections
+== Authentication Sections
 
 The sub-sections below are called based on the value of the
 `Auth-Type` attribute, which should have been set by the `recv
@@ -1053,7 +1083,7 @@ Access-Request` section, above.
 
 Since version 4, proxying also happens in this section.  For more
 information on how proxying has changed in version 4, please see
-https://wiki.freeradius.org/upgrading/version4/proxy.
+https://www.freeradius.org/documentation/freeradius-server/4.0.0/howto/upgrade/proxy.html
 
 For authentication, you should generally NOT set the `Auth-Type`
 attribute.  As noted above, the modules will usually figure it what
@@ -1077,7 +1107,7 @@ below, after authentication has completed.
 
 
 
-### PAP Authentication
+=== PAP Authentication
 
 For users who are using PAP authentication. A back-end database
 listed in the "recv Access-Request" section MUST supply a "known
@@ -1091,7 +1121,7 @@ authenticate pap {
 
 ```
 
-### CHAP Authentication
+=== CHAP Authentication
 
 For users who are using CHAP authentication. A back-end database
 listed in the "recv Access-Request" section MUST supply a
@@ -1104,7 +1134,7 @@ authenticate chap {
 
 ```
 
-### MS-CHAP authentication
+=== MS-CHAP authentication
 
 For users who are using MS-CHAP authentication. A back-end
 database listed in the "recv Access-Request" section MUST supply
@@ -1118,7 +1148,7 @@ authenticate mschap {
 
 ```
 
-### SIP Digest Authentication
+=== SIP Digest Authentication
 
 For users who are using SIP Digest authentication.
 
@@ -1132,7 +1162,7 @@ authenticate digest {
 
 ```
 
-### PAM (Pluggable Authentication Modules) Authentication
+=== PAM (Pluggable Authentication Modules) Authentication
 
 Authenticate with PAM (Pluggable Authentication Modules).
 
@@ -1147,7 +1177,7 @@ FreeRADIUS.
 
 ```
 
-### LDAP Authentication
+=== LDAP Authentication
 
 For users who are using PAP, and when you can't get the "known
 good" password from LDAP.  The module binds to the LDAP directory
@@ -1170,7 +1200,7 @@ authenticate ldap {
 
 ```
 
-### EAP Authentication
+=== EAP Authentication
 
 For EAP-MD5, EAP-MSCHAP, EAP-TLS, EAP-TTLS, EAP-PEAP, EAP-PWD, etc.
 
@@ -1181,7 +1211,7 @@ authenticate eap {
 
 ```
 
-### Proxying
+=== Proxying
 
 Proxying has changed substantially from v3 to v4.  These changes
 are complex, but were necessary in order to support new features.
@@ -1195,7 +1225,7 @@ now trivial in v4.  For example:
     * note that this won't work for EAP.
 
 For more information, see:
-https://wiki.freeradius.org/upgrading/version4/proxy.
+https://www.freeradius.org/documentation/freeradius-server/4.0.0/howto/upgrade/proxy.html
 
 
 
@@ -1239,11 +1269,11 @@ for more information.
 
 ```
 
-## Send replies to Access-Request packets
+== Send replies to Access-Request packets
 
 
 
-### send Access-Challenge packets
+=== send Access-Challenge packets
 
 
 This section is called when sending an Access-Challenge
@@ -1258,7 +1288,7 @@ send Access-Challenge {
 
 ```
 
-### send Access-Accept packets
+=== send Access-Accept packets
 
 Once we know that the user has been authenticated successfully,
 there are additional things that can be done.
@@ -1414,7 +1444,7 @@ drop the network connection.
 
 ```
 
-### send Access-Reject packets
+=== send Access-Reject packets
 
 This section processes `link:https://freeradius.org/rfc/rfc2865.html#Access-Reject[Access-Reject]` packets before they are sent
 to the NAS.
@@ -1479,7 +1509,7 @@ longer automatic as it was in version 3.
 
 ```
 
-## Accounting
+== Accounting
 
 
 This section deals with receiving Accounting requests and
@@ -1487,7 +1517,7 @@ sending Accounting responses.
 
 
 
-### Receive Accounting-Request packets
+=== Receive Accounting-Request packets
 
 An Accounting-Request packet has been received. Decide which
 accounting type to use.
@@ -1512,11 +1542,16 @@ The server is supposed to conclude that the start time was
 "Acct-Delay-Time" seconds in the past.
 
 If there's no Event-Timestamp, then we create one, using
-Acct-Delay-Time as an offset if it exists.
+Acct-Delay-Time as an offset if it exists.  BUT we only do
+this if Acct-Delay-Time exists, and has a reasonable value.
 
 ```
 	if (!Event-Timestamp) {
-		Event-Timestamp := %time.request() - %{Acct-Delay-Time || 0}
+		Event-Timestamp := %time.request()
+
+		if (Acct-Delay-Time && (Acct-Delay-Time < 86400 * 7)) {
+			Event-Timestamp -= Acct-Delay-Time
+		}
 	}
 
 ```
@@ -1548,9 +1583,9 @@ then process the `send Accounting-Response` section
 
 
 
-## Sections for Acct-Status-Type
+== Sections for Acct-Status-Type
 
-### Session start
+=== Session start
 
 ```
 accounting Start {
@@ -1577,7 +1612,7 @@ it is available for all the accounting sections.
 
 ```
 
-### Session stop
+=== Session stop
 
 ```
 accounting Stop {
@@ -1615,7 +1650,7 @@ Return an address to the IP Pool when we see a stop record.
 
 ```
 
-### Session is still alive
+=== Session is still alive
 
 ```
 accounting Interim-Update {
@@ -1636,7 +1671,7 @@ Refresh leases when we see an alive.
 
 ```
 
-### The NAS has just booted up.
+=== The NAS has just booted up.
 
 ```
 accounting Accounting-On {
@@ -1657,7 +1692,7 @@ Return all addresses related to this NAS to the IP Pool
 
 ```
 
-### The NAS is about to shut down
+=== The NAS is about to shut down
 
 ```
 accounting Accounting-Off {
@@ -1678,7 +1713,7 @@ Return all addresses related to this NAS to the IP Pool
 
 ```
 
-### The user session failed in some way
+=== The user session failed in some way
 
 ```
 accounting Failed {
@@ -1700,7 +1735,7 @@ Some vendors also define their own values, which is a very bad idea.
 
 
 
-### Send Accounting-Response.
+=== Send Accounting-Response.
 
 Log the accounting data before replying. If logging fails then
 the reply will not be sent, which means the NAS will send the
@@ -1752,41 +1787,29 @@ Filter attributes from the accounting response.
 
 ```
 
-## Timeouts
+== Finally
 
-A virtual server can have a `catch timeout` section.  The format and
-contents are the same as the normal `catch timeout`.
+If a `finally` section is defined, then all packets will be processed
+through it.
 
-This section limits the total processing time for a request.  The
-values given here should be less than `request.timeout`.
+This includes packets whose processing has been stopped due to reaching
+`request.timeout`.  Such packets can be detected by testing for the
+`timeout` rcode.
 
-When a request reaches `request.timeout`, it is forcibly stopped.
-No further processing takes place.
-
-When a request reaches the time specified in this `timeout` section,
-all normal processing is stopped.  The `timeout` section is then run.
-
-This configuration allows the server to take action when a request
-is taking too long.  For example, it could write a failure message
-to a log file.
-
-The `timeout` section can contain any `unlang` keyword, including
-`call`, and other `timeout` sections.  If you need to have a
-"timeout for the timeout", then just add anoither `timeout` section
-inside of this one.
-
-Note that `request.timeout` still applies.  So the timeout value
-given here should be less than the value given by
-`request.timeout`.
-
-
+The `finally` section can be used as a common logging section for
+all packets, allowing their final state to be captured.
 
 ```
-#	catch timeout {
-#		do_logging_here
-#		...
+#finally {
+#	if (timeout) {
+#		logging relating to timeouts
+#		return
 #	}
+```
 
+```
+#	normal packet logging
+#}
 }
 ```
 
@@ -1795,5 +1818,5 @@ given here should be less than the value given by
 ```
 ```
 
-// Copyright (C) 2025 Network RADIUS SAS.  Licenced under CC-by-NC 4.0.
+// Copyright (C) 2026 Network RADIUS SAS.  Licenced under CC-by-NC 4.0.
 // This documentation was developed by Network RADIUS SAS.

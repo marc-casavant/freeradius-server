@@ -20,7 +20,7 @@
 #
 
 #
-#  ## Configuration Settings
+#  == Configuration Settings
 #
 eap {
 	#
@@ -45,6 +45,13 @@ eap {
 	#  it is enabled by OS and device vendors.
 	#
 #	require_identity_realm = nai
+
+	#
+	#  Session tracking has moved to the `session` section of a virtual server.
+	#  * timer_expire --> timeout
+	#  * max_sessions --> max
+	#  * dedup_key    --> dedup_key
+	#
 
 	#
 	#  default_eap_type:: The default EAP submodule to invoke when an `EAP-Identity`
@@ -84,6 +91,11 @@ eap {
 	#
 	#  type:: Only EAP types listed below with a `type = <EAP-Type>` pair will be allowed.
 	#
+	#  In addition, setting `type = md5` will load the configuration section `md5 { ... }`.
+	#  There is no need to "comment out" the entire configuration section for EAP types
+	#  which are not used.  Instead, simply comment out or delete the `type = ..` entry
+	#  for that EAP method, and the entire configuration section will be ignored.
+	#
 	#  If the `control.EAP-Type` attribute is set, then that is used to form the list of
 	#  allowed EAP types, with the first instance being the default type and others also
 	#  being allowed.
@@ -109,7 +121,6 @@ eap {
 	#  WARNING: EAP-MD5 authentication cannot be used for wireless
 	#  connections.  It is insecure, and does not provide for dynamic WEP
 	#  keys or WPA enterprise.
-
 	#
 	md5 {
 	}
@@ -121,16 +132,16 @@ eap {
 	#  as is done by other modules. The change from v3 is that the `inner-tunnel` virtual server
 	#  is no not used.
 	#
-#	pwd {
-#		group = 19
+	pwd {
+		group = 19
 
-#		server_id = theserver@example.com
+		server_id = theserver@example.com
 
 		#
 		#  fragment_size:: This has the same meaning as for TLS.
 		#
-#		fragment_size = 1020
-#	}
+		fragment_size = 1020
+	}
 
 	#
 	#  ### Generic Token Card
@@ -166,18 +177,18 @@ eap {
 	#
 	#  ## Common TLS configuration for TLS-based EAP types
 	#
-	#  See `raddb/certs/index.adoc` for additional comments on certificates.
+	#  See `certs/index.adoc` for additional comments on certificates.
 	#
 	#  If OpenSSL was not found at the time the server was built, the `tls`,
 	#  `ttls`, and `peap` sections will be ignored.
 	#
 	#  If you do not currently have certificates signed by a trusted CA you
 	#  may use the 'snakeoil' certificates. Included with the server in
-	#  `raddb/certs`.
+	#  `certs`.
 	#
 	#  If these certificates have not been auto-generated:
 	#
-	#    cd raddb/certs
+	#    cd _confdir_/certs
 	#    make
 	#
 	#  These test certificates *SHOULD NOT* be used in a normal
@@ -1381,11 +1392,11 @@ eap {
 }
 
 #
-#  ## Expansions
+#  == Expansions
 #
 #  The rlm_eap module provides the below functions to interact with the `3GPP` and `SIM` protocols.
 #
-#  ### %3gpp_temporary_id.decrypt('...)
+#  === %3gpp_temporary_id.decrypt('...)
 #
 #  TODO
 #
@@ -1404,7 +1415,7 @@ eap {
 #  TODO
 #  ```
 #
-#  ### %3gpp_temporary_id.encrypt(...)
+#  === %3gpp_temporary_id.encrypt(...)
 #
 #  TODO
 #
@@ -1423,7 +1434,7 @@ eap {
 #  TODO
 #  ```
 #
-#  ### %3gpp_temporary_id.key_index(...)
+#  === %3gpp_temporary_id.key_index(...)
 #
 #  TODO
 #
@@ -1442,7 +1453,7 @@ eap {
 #  TODO
 #  ```
 #
-#  ### %aka_sim_id_method(...)
+#  === %aka_sim_id_method(...)
 #
 #  TODO
 #
@@ -1461,7 +1472,7 @@ eap {
 #  TODO
 #  ```
 #
-#  ### %aka_sim_id_type(...)
+#  === %aka_sim_id_type(...)
 #
 #  TODO
 #

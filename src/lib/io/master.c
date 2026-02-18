@@ -712,6 +712,7 @@ static fr_io_connection_t *fr_io_connection_alloc(fr_io_instance_t const *inst,
 		 */
 		li->connected = true;
 		li->app_io = thread->child->app_io;
+		li->cs = inst->app_io_conf;
 		li->thread_instance = connection;
 		li->app_io_instance = mi->data;
 		li->track_duplicates = thread->child->app_io->track_duplicates;
@@ -752,6 +753,7 @@ static fr_io_connection_t *fr_io_connection_alloc(fr_io_instance_t const *inst,
 
 		li->connected = true;
 		li->thread_instance = connection;
+		li->cs = inst->app_io_conf;
 		li->app_io_instance = li->thread_instance;
 		li->track_duplicates = thread->child->app_io->track_duplicates;
 
@@ -1085,7 +1087,7 @@ static fr_io_client_t *client_alloc(TALLOC_CTX *ctx, fr_io_client_state_t state,
 }
 
 
-static fr_io_track_t *fr_io_track_add(fr_io_client_t *client,
+static fr_io_track_t *fr_io_track_add(fr_listen_t const *li, fr_io_client_t *client,
 				      fr_io_address_t *address,
 				      uint8_t const *packet, size_t packet_len,
 				      fr_time_t recv_time, bool *is_dup)
@@ -1112,6 +1114,7 @@ static fr_io_track_t *fr_io_track_add(fr_io_client_t *client,
 		my_address->radclient = client->radclient;
 	}
 
+	track->li = li;
 	track->client = client;
 
 	track->timestamp = recv_time;
@@ -1709,7 +1712,7 @@ have_client:
 			static 	fr_rate_limit_t tracking_failed;
 			bool	is_dup = false;
 
-			track = fr_io_track_add(client, &address, buffer, packet_len, recv_time, &is_dup);
+			track = fr_io_track_add(li, client, &address, buffer, packet_len, recv_time, &is_dup);
 			if (!track) {
 				RATE_LIMIT_LOCAL(thread ? &thread->rate_limit.tracking_failed : &tracking_failed,
 						 ERROR, "Failed tracking packet from client %s - discarding it",
@@ -1954,7 +1957,7 @@ static int mod_inject(fr_listen_t *li, uint8_t const *buffer, size_t buffer_len,
 	/*
 	 *	Track this packet, because that's what mod_read expects.
 	 */
-	track = fr_io_track_add(connection->client, connection->address,
+	track = fr_io_track_add(li, connection->client, connection->address,
 				buffer, buffer_len, recv_time, &is_dup);
 	if (!track) {
 		DEBUG2("Failed injecting packet to tracking table");
@@ -2455,12 +2458,47 @@ static ssize_t mod_write(fr_listen_t *li, void *packet_ctx, fr_time_t request_ti
 	fr_assert(client->pending != NULL);
 
 	/*
-	 *	The request has timed out trying to define the dynamic
-	 *	client.  Oops... try again.
+	 *	The request failed trying to define the dynamic
+	 *	client.  Discard the client and all pending packets.
 	 */
 	if ((buffer_len == 1) && (*buffer == true)) {
-		DEBUG("Request has timed out trying to define a new client.  Trying again.");
-		goto reread;
+		DEBUG("Request failed trying to define a new client.  Discarding client and pending packets.");
+
+		if (!connection) {
+			talloc_free(client);
+			return buffer_len;
+		}
+
+		/*
+		 *	Free pending packets and tracking table.
+		 *	The table is parented by connection->parent, so won't
+		 *	be auto-freed when connection->client is freed.
+		 */
+		TALLOC_FREE(client->pending);
+		if (client->table) TALLOC_FREE(client->table);
+
+		/*
+		 *	Remove from parent's hash table so new packets won't
+		 *	be routed to this connection.
+		 */
+		pthread_mutex_lock(&connection->parent->mutex);
+		if (connection->in_parent_hash) {
+			connection->in_parent_hash = false;
+			(void) fr_hash_table_delete(connection->parent->ht, connection);
+		}
+		pthread_mutex_unlock(&connection->parent->mutex);
+
+		/*
+		 *	Mark the connection as dead, then trigger the
+		 *	standard cleanup path via fr_network_listen_read().
+		 *	This calls mod_read(), which sees connection->dead,
+		 *	returns -1, and the network layer closes the
+		 *	connection through its normal error handling.
+		 */
+		connection->dead = true;
+		fr_network_listen_read(connection->nr, connection->listen);
+
+		return buffer_len;
 	}
 
 	/*
@@ -2597,6 +2635,9 @@ static ssize_t mod_write(fr_listen_t *li, void *packet_ctx, fr_time_t request_ti
 	COPY_FIELD(client, src_ipaddr);
 	COPY_FIELD(client, require_message_authenticator);
 	COPY_FIELD(client, require_message_authenticator_is_set);
+#ifdef NAS_VIOLATES_RFC
+	COPY_FIELD(client, allow_vulnerable_clients);
+#endif
 	COPY_FIELD(client, limit_proxy_state);
 	COPY_FIELD(client, limit_proxy_state_is_set);
 	COPY_FIELD(client, use_connected);
@@ -2750,7 +2791,6 @@ finish:
 		client_expiry_timer(el->tl, fr_time_wrap(0), client);
 	}
 
-reread:
 	/*
 	 *	If there are pending packets (and there should be at
 	 *	least one), tell the network socket to call our read()
@@ -3139,6 +3179,7 @@ int fr_master_io_listen(fr_io_instance_t *inst, fr_schedule_t *sc,
 	/*
 	 *	Set the listener to call our master trampoline function.
 	 */
+	li->cs = inst->app_io_conf;
 	li->app_io = &fr_master_app_io;
 	li->thread_instance = thread;
 	li->app_io_instance = inst;
@@ -3190,7 +3231,6 @@ int fr_master_io_listen(fr_io_instance_t *inst, fr_schedule_t *sc,
 	 *	socket for us.
 	 */
 	if (inst->app_io->open(child) < 0) {
-		cf_log_err(inst->app_io_conf, "Failed opening %s interface", inst->app_io->common.name);
 		talloc_free(li);
 		return -1;
 	}
@@ -3212,10 +3252,8 @@ int fr_master_io_listen(fr_io_instance_t *inst, fr_schedule_t *sc,
 
 		other = listen_find_any(thread->child);
 		if (other) {
-			ERROR("Failed opening %s - that port is already in use by another listener in server %s { ... } - %s",
-			      child->name, cf_section_name2(other->server_cs), other->name);
-
-			ERROR("got socket %d %d\n", child->app_io_addr->inet.src_port, other->app_io_addr->inet.src_port);
+			cf_log_err(other->cs, "Already opened socket %s", other->name);
+			cf_log_err(li->cs, "Failed opening duplicate socket - cannot use the same configuration for two different listen sections");
 
 			talloc_free(li);
 			return -1;
@@ -3267,6 +3305,8 @@ fr_io_track_t *fr_master_io_track_alloc(fr_listen_t *li, fr_client_t *radclient,
 
 	MEM(track = talloc_zero_pooled_object(client, fr_io_track_t, 1, sizeof(*track) + sizeof(track->address) + 64));
 	MEM(track->address = address = talloc_zero(track, fr_io_address_t));
+
+	track->li = li;
 	track->client = client;
 
 	address->socket.inet.src_port = src_port;

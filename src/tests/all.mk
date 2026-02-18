@@ -75,7 +75,7 @@ ci-test: raddb/test.conf test
 	${Q}FR_LIBRARY_PATH=${BUILD_DIR}/lib/local/.libs/ ${BUILD_DIR}/make/jlibtool --mode=execute ${BUILD_DIR}/bin/local/radiusd -xxxv -n test
 	${Q}rm -f raddb/test.conf
 	${Q}$(MAKE) install
-	${Q}perl -p -i -e 's/allow_vulnerable_openssl = no/allow_vulnerable_openssl = yes/' ${raddbdir}/radiusd.conf
+	${Q}perl -p -i -e 's/allow_vulnerable_openssl = no/allow_vulnerable_openssl = yes/' $(confdir)/radiusd.conf
 	${Q}${sbindir}/radiusd -XC
 
 #
@@ -95,7 +95,7 @@ export ASAN_OPTIONS=malloc_context_size=50 detect_leaks=1 symbolize=1
 export LSAN_OPTIONS=print_suppressions=0 fast_unwind_on_malloc=0
 endif
 
-SUBMAKEFILES := rbmonkey.mk $(subst src/tests/,,$(wildcard src/tests/*/all.mk)) depends.mk
+SUBMAKEFILES := $(subst src/tests/,,$(wildcard src/tests/*/all.mk)) depends.mk
 endif
 
 .PHONY: $(BUILD_DIR)/tests

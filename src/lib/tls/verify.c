@@ -268,6 +268,9 @@ int fr_tls_verify_cert_cb(int ok, X509_STORE_CTX *x509_ctx)
 		if (fr_tls_session_pairs_from_x509_cert(&container->vp_group, container,
 							request, cert, conf->verify.der_decode) < 0) {
 			fr_pair_delete_by_da(&request->session_state_pairs, attr_tls_certificate);
+			if (conf->verify.der_decode) {
+				fr_pair_delete_by_da(&request->session_state_pairs, attr_der_certificate);
+			}
 			my_ok = 0;
 			goto done;
 		}
@@ -482,6 +485,11 @@ static unlang_action_t tls_verify_client_cert_push(request_t *request, fr_tls_se
 	vp = NULL;
 	while ((vp = fr_pair_find_by_da(&request->parent->session_state_pairs, vp, attr_tls_certificate))) {
 		fr_pair_append(&request->session_state_pairs, fr_pair_copy(request->session_state_ctx, vp));
+	}
+	if (conf->verify.der_decode) {
+		while ((vp = fr_pair_find_by_da(&request->parent->session_state_pairs, vp, attr_der_certificate))) {
+			fr_pair_append(&request->session_state_pairs, fr_pair_copy(request->session_state_ctx, vp));
+		}
 	}
 
 	MEM(pair_append_request(&vp, attr_tls_session_resumed) >= 0);

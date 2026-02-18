@@ -1,4 +1,4 @@
-timeout: 90
+timeout: 120
 state_order: sequence
 states:
   state_1:
@@ -29,10 +29,9 @@ states:
 
               #
               # Delay to allow the rest of the environment to startup before starting load generation.
-              # When emulating x86 hardware on ARM hardware, the startup time can be significant, hence
-              # the 60 second sleep here.
+              # Environment startup time can be significant.
               #
-              sleep 60
+              sleep 90
 
               #
               # Starting load-generator server which will generate traffic based on env configuration
@@ -53,7 +52,7 @@ states:
 
             detach: true
     verify:
-      timeout: 70
+      timeout: 100
       trigger_mode: unordered
       triggers:
       - hs-access-request-received:

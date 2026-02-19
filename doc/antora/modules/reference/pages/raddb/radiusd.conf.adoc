@@ -598,7 +598,7 @@ removed (and made into errors!) in the final release.
 Some of these flags can also be passed on the command line as
 `-S flag=value`.
 
-Dictionary migration instructions can be found in `${raddbdir}/dictionary`.
+Dictionary migration instructions can be found in `${confdir}/dictionary`.
 
 
 
@@ -689,7 +689,7 @@ All of the other configuration sections like:
 
 Have been moved to the the file:
 
-`raddb/sites-available/default`
+`sites-available/default`
 
 This is the `default` virtual server that has the same
 configuration as in version 1.0.x and 1.1.x.  The default
@@ -698,7 +698,7 @@ edit it to create policies for your local site.
 
 For more documentation on virtual servers, see:
 
-`raddb/sites-available/index.adoc`
+`sites-available/index.adoc`
 
 
 == Default Configuration
@@ -710,10 +710,9 @@ sysconfdir = ${prefix}/etc
 localstatedir = ${prefix}/var
 sbindir = ${exec_prefix}/sbin
 logdir = ${localstatedir}/log/radius
-raddbdir = ${sysconfdir}/raddb
+confdir = ${sysconfdir}/raddb
 radacctdir = ${logdir}/radacct
 name = radiusd
-confdir = ${raddbdir}
 modconfdir = ${confdir}/mods-config
 certdir = ${confdir}/certs
 cadir   = ${confdir}/certs
@@ -722,7 +721,7 @@ db_dir = ${localstatedir}/lib/${name}
 libdir = ${exec_prefix}/lib
 pidfile = ${run_dir}/${name}.pid
 #panic_action = "gdb %e %p"
-#panic_action = "gdb -silent -x ${raddbdir}/panic.gdb %e %p 2>&1 | tee ${logdir}/gdb-${name}-%p.log"
+#panic_action = "gdb -silent -x ${confdir}/panic.gdb %e %p 2>&1 | tee ${logdir}/gdb-${name}-%p.log"
 request {
 	max = 16384
 	timeout = 30
@@ -757,7 +756,7 @@ log debug {
 ENV {
 #	FOO = '/bar/baz'
 #	BAR
-#	KRB5_CLIENT_KTNAME = ${raddbdir}/radiusd.keytab
+#	KRB5_CLIENT_KTNAME = ${confdir}/radiusd.keytab
 #	LD_PRELOAD = /path/to/library1.so
 #	LD_PRELOAD = /path/to/library2.so
 }

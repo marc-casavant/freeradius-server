@@ -168,7 +168,7 @@ static NEVER_RETURNS void usage(void)
 	fprintf(stderr, "  -b                                Mandate checks for Blast RADIUS issue (this is not set by default).\n");
 	fprintf(stderr, "  -C [<client_ip>:]<client_port>    Client source port and source IP address.  Port values may be 1..65535\n");
 	fprintf(stderr, "  -c <count>			     Send each packet 'count' times.\n");
-	fprintf(stderr, "  -d <raddb>                        Set user dictionary directory (defaults to " RADDBDIR ").\n");
+	fprintf(stderr, "  -d <confdir>                      Set user dictionary directory (defaults to " CONFDIR ").\n");
 	fprintf(stderr, "  -D <dictdir>                      Set main dictionary directory (defaults to " DICTDIR ").\n");
 	fprintf(stderr, "  -f <request>[:<expected>][:<coa_reply>][:<coa_expected>]  Read packets from file, not stdin.\n");
 	fprintf(stderr, "                                    If a second file is provided, it will be used to verify responses\n");
@@ -1621,7 +1621,7 @@ int main(int argc, char **argv)
 {
 	int		ret = EXIT_SUCCESS;
 	int		c;
-	char		const *raddb_dir = RADDBDIR;
+	char		const *confdir = CONFDIR;
 	char		const *dict_dir = DICTDIR;
 	char		filesecret[256];
 	FILE		*fp;
@@ -1720,7 +1720,7 @@ int main(int argc, char **argv)
 			break;
 
 		case 'd':
-			raddb_dir = optarg;
+			confdir = optarg;
 			break;
 
 		case 'e':	/* magical extra stuff */
@@ -1920,7 +1920,7 @@ int main(int argc, char **argv)
 		exit(EXIT_FAILURE);
 	}
 
-	if (fr_dict_read(fr_dict_unconst(dict_freeradius), raddb_dir, FR_DICTIONARY_FILE) == -1) {
+	if (fr_dict_read(fr_dict_unconst(dict_freeradius), confdir, FR_DICTIONARY_FILE) == -1) {
 		fr_log_perror(&default_log, L_ERR, __FILE__, __LINE__, NULL,
 			      "Failed to initialize the dictionaries");
 		exit(EXIT_FAILURE);

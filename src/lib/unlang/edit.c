@@ -50,7 +50,7 @@ static void rdebug_assign(request_t *request, char const *attr, fr_token_t op, f
 
 	switch (box->type) {
 	case FR_TYPE_QUOTED:
-		RDEBUG2("%s %s \"%pV\"", attr, fr_tokens[op], box);
+		RDEBUG2("%s %s %pR", attr, fr_tokens[op], box);
 		break;
 
 	case FR_TYPE_INTERNAL:
@@ -66,7 +66,7 @@ static void rdebug_assign(request_t *request, char const *attr, fr_token_t op, f
 			break;
 		}
 
-		RDEBUG2("%s %s %pV", attr, fr_tokens[op], box);
+		RDEBUG2("%s %s %pR", attr, fr_tokens[op], box);
 		break;
 	}
 }
@@ -211,7 +211,7 @@ static int tmpl_to_values(TALLOC_CTX *ctx, edit_result_t *out, request_t *reques
 
 static void edit_debug_attr_list(request_t *request, fr_pair_list_t const *list, map_t const *map);
 
-static void edit_debug_attr_vp(request_t *request, fr_pair_t *vp, map_t const *map)
+static void edit_debug_attr_vp(request_t *request, fr_pair_t const *vp, map_t const *map)
 {
 	fr_assert(vp != NULL);
 
@@ -230,9 +230,25 @@ static void edit_debug_attr_vp(request_t *request, fr_pair_t *vp, map_t const *m
 			break;
 		}
 	} else {
+		size_t slen;
+		fr_sbuff_t sbuff;
+		char buffer[1024];
+
+		sbuff = FR_SBUFF_OUT(buffer, sizeof(buffer));
+
+		/*
+		 *	Squash the names down if necessary.
+		 */
+		if (!RDEBUG_ENABLED3) {
+			slen = fr_pair_print_name(&sbuff, NULL, &vp);
+		} else {
+			slen = fr_sbuff_in_sprintf(&sbuff, "%s %s ", vp->da->name, fr_tokens[vp->op]);
+		}
+		if (slen <= 0) return;
+
 		switch (vp->vp_type) {
 		case FR_TYPE_STRUCTURAL:
-                        RDEBUG2("%s = {", vp->da->name);
+                        RDEBUG2("%s{", buffer);
 			RINDENT();
 			edit_debug_attr_list(request, &vp->vp_group, NULL);
 			REXDENT();
@@ -240,7 +256,8 @@ static void edit_debug_attr_vp(request_t *request, fr_pair_t *vp, map_t const *m
 			break;
 
 		default:
-			RDEBUG_ASSIGN(vp->da->name, vp->op, &vp->data);
+			if (fr_pair_print_value_quoted(&sbuff, vp, T_DOUBLE_QUOTED_STRING) <= 0) return;
+			RDEBUG2("%s", buffer);
 			break;
 		}
 	}
@@ -369,7 +386,7 @@ static int apply_edits_to_list(request_t *request, unlang_frame_state_edit_t *st
 		relative = (fr_pair_parse_t) { };
 
 		if (fr_pair_list_afrom_substr(&root, &relative, &FR_SBUFF_IN(box->vb_strvalue, box->vb_length)) < 0) {
-			RPEDEBUG("Failed parsing string '%pV' as attribute list", box);
+			RPEDEBUG("Failed parsing string %pV as attribute list", box);
 			return -1;
 		}
 
@@ -591,12 +608,12 @@ static int edit_delete_lhs(request_t *request, edit_map_t *current, bool delete)
 		 */
 		vp = tmpl_dcursor_init(&err, current->ctx, &cc, &cursor, request, current->lhs.vpt);
 		if (!vp) break;
+		tmpl_dcursor_clear(&cc);
 
 		parent = fr_pair_parent(vp);
 		fr_assert(parent != NULL);
 
 		if (!pair_is_editable(request, vp)) {
-			tmpl_dcursor_clear(&cc);
 			return -1;
 		}
 
@@ -612,7 +629,6 @@ static int edit_delete_lhs(request_t *request, edit_map_t *current, bool delete)
 			}
 
 			current->lhs.vp = vp;
-			tmpl_dcursor_clear(&cc);
 			return 0;
 		}
 
@@ -623,7 +639,6 @@ static int edit_delete_lhs(request_t *request, edit_map_t *current, bool delete)
 			RPWDEBUG("Failed deleting attribute");
 			return -1;
 		}
-		tmpl_dcursor_clear(&cc);
 	}
 
 	return 0;
@@ -856,7 +871,10 @@ static int apply_edits_to_leaf(request_t *request, unlang_frame_state_edit_t *st
 			if (fr_value_box_cast(vp, &vp->data, vp->vp_type, vp->da, box) < 0) goto fail;
 			if (vp->da->flags.unsafe) fr_value_box_mark_unsafe(&vp->data);
 
-			if (fr_edit_list_insert_pair_tail(state->el, &current->lhs.vp_parent->vp_group, vp) < 0) goto fail;
+			if (fr_edit_list_insert_pair_tail(state->el, &current->lhs.vp_parent->vp_group, vp) < 0) {
+				talloc_free(vp);
+				goto fail;
+			}
 			vp->op = T_OP_EQ;
 			PAIR_ALLOCED(vp);
 		}
@@ -1229,7 +1247,8 @@ static int check_lhs_value(request_t *request, unlang_frame_state_edit_t *state,
 		vpt = map->lhs;
 
 		/*
-		 *
+		 *	If the LHS is an xlat, then we don't need to do additional checking.  The xlat output
+		 *	has already been move to the output list.
 		 */
 		if (tmpl_is_xlat(vpt)) return next_map(request,state, current);
 
@@ -1242,7 +1261,10 @@ static int check_lhs_value(request_t *request, unlang_frame_state_edit_t *state,
 		vp = tmpl_dcursor_init(NULL, request, &cc, &cursor, request, vpt);
 		while (vp) {
 			MEM(box = fr_value_box_alloc_null(state));
-			if (unlikely(fr_value_box_copy(box, box, &vp->data) < 0)) return -1;
+			if (unlikely(fr_value_box_copy(box, box, &vp->data) < 0)) {
+				tmpl_dcursor_clear(&cc);
+				return -1;
+			}
 
 			fr_value_box_list_insert_tail(&current->parent->rhs.list, box);
 
@@ -1330,6 +1352,7 @@ static int expanded_lhs_value(request_t *request, unlang_frame_state_edit_t *sta
 	erules = fr_value_unescape_by_quote[current->map->lhs->quote];
 
 	if (fr_value_box_from_str(dst, dst, da->type, da, box->vb_strvalue, box->vb_length, erules) < 0) {
+		talloc_free(dst);
 		RWDEBUG("Failed converting result to '%s' - %s", fr_type_to_str(type), fr_strerror());
 		return -1;
 	}

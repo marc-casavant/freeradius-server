@@ -262,7 +262,7 @@ int8_t fr_dict_attr_ordered_cmp(fr_dict_attr_t const *a, fr_dict_attr_t const *b
 		/*
 		 *	Order known attributes before unknown / raw ones.
 		 */
-		ret = (b->flags.is_unknown | b->flags.is_raw) - (a->flags.is_unknown | a->flags.is_raw);
+		ret = CMP((a->flags.is_unknown | a->flags.is_raw), (b->flags.is_unknown | b->flags.is_raw));
 		if (ret != 0) return 0;
 
 		return CMP(a->attr, b->attr);
@@ -1180,7 +1180,7 @@ static int dict_attr_acopy_child(fr_dict_t *dict, fr_dict_attr_t *dst, fr_dict_a
 	 */
 	if (src->type != FR_TYPE_UNION) return 0;
 
-	return dict_attr_alias_add(dst->parent, copy->name, copy);
+	return dict_attr_alias_add(dst->parent, copy->name, copy, false);
 }
 
 
@@ -1396,7 +1396,7 @@ int dict_attr_acopy_aliases(UNUSED fr_dict_attr_t *dst, fr_dict_attr_t const *sr
 		new_ref = dict_alias_reref(dst, src, ref);
 		fr_assert(new_ref != NULL);
 
-		if (dict_attr_alias_add(dst, da->name, new_ref) < 0) return -1;
+		if (dict_attr_alias_add(dst, da->name, new_ref, false) < 0) return -1;
 #endif
 	}
 
@@ -1406,9 +1406,9 @@ int dict_attr_acopy_aliases(UNUSED fr_dict_attr_t *dst, fr_dict_attr_t const *sr
 /** Add an alias to an existing attribute
  *
  */
-int dict_attr_alias_add(fr_dict_attr_t const *parent, char const *alias, fr_dict_attr_t const *ref)
+int dict_attr_alias_add(fr_dict_attr_t const *parent, char const *alias, fr_dict_attr_t const *ref, bool from_public)
 {
-	fr_dict_attr_t const *da, *common;
+	fr_dict_attr_t const *da;
 	fr_dict_attr_t *self;
 	fr_hash_table_t *namespace;
 
@@ -1451,11 +1451,14 @@ int dict_attr_alias_add(fr_dict_attr_t const *parent, char const *alias, fr_dict
 	}
 
 	/*
-	 *	ALIASes can point across the tree and down, for the same parent.  ALIASes cannot go back up
-	 *	the tree.
+	 *	ALIASes from the dictionaries, need to point to a child of the same parent.  ALIASes cannot go
+	 *	back up the tree.
+	 *
+	 *	ALIASes added internally, they can break this restriction.
+	 *
+	 *	This restriction is here to prevent people from creating loops of ALIASes.
 	 */
-	common = fr_dict_attr_common_parent(parent, ref, true);
-	if (!common) {
+	if (from_public && !fr_dict_attr_common_parent(parent, ref, true)) {
 		fr_strerror_printf("Invalid ALIAS to target attribute %s of data type '%s' - the attributes do not share a parent",
 				   ref->name, fr_type_to_str(ref->type));
 		return -1;
@@ -2929,10 +2932,10 @@ fr_dict_vendor_t const *fr_dict_vendor_by_name(fr_dict_t const *dict, char const
 
 	INTERNAL_IF_NULL(dict, NULL);
 
-	if (!name) return 0;
+	if (!name) return NULL;
 
 	found = fr_hash_table_find(dict->vendors_by_name, &(fr_dict_vendor_t) { .name = name });
-	if (!found) return 0;
+	if (!found) return NULL;
 
 	return found;
 }
@@ -3568,7 +3571,7 @@ fr_dict_attr_t *dict_attr_child_by_num(fr_dict_attr_t const *parent, unsigned in
 	 *	Child arrays may be trimmed back to save memory.
 	 *	Check that so we don't SEGV.
 	 */
-	if ((attr & 0xff) > talloc_array_length(children)) return NULL;
+	if ((attr & 0xff) >= talloc_array_length(children)) return NULL;
 
 	bin = children[attr & 0xff];
 	for (;;) {
@@ -3899,7 +3902,6 @@ int dict_dlopen(fr_dict_t *dict, char const *name)
 	 */
 	sym_name = talloc_typed_asprintf(NULL, "libfreeradius_%s_dict_protocol", name);
 	if (unlikely(sym_name == NULL)) {
-		talloc_free(lib_name);
 		goto oom;
 	}
 	talloc_bstr_tolower(sym_name);
@@ -4060,9 +4062,9 @@ static void dependent_debug(fr_dict_t *dict)
 
 	fprintf(stderr, "DEPENDENTS FOR %s\n", dict->root->name);
 
-	for (dep = fr_rb_iter_init_inorder(&iter, dict->dependents);
+	for (dep = fr_rb_iter_init_inorder(dict->dependents, &iter);
 	     dep;
-	     dep = fr_rb_iter_next_inorder(&iter)) {
+	     dep = fr_rb_iter_next_inorder(dict->dependents, &iter)) {
 		fprintf(stderr, "\t<- %s (%d)\n", dep->dependent, dep->count);
 	}
 }
@@ -4143,9 +4145,9 @@ static int _dict_free(fr_dict_t *dict)
 
 		fr_strerror_printf("Refusing to free dictionary \"%s\", still has dependents", dict->root->name);
 
-		for (dep = fr_rb_iter_init_inorder(&iter, dict->dependents);
+		for (dep = fr_rb_iter_init_inorder(dict->dependents, &iter);
 		     dep;
-		     dep = fr_rb_iter_next_inorder(&iter)) {
+		     dep = fr_rb_iter_next_inorder(dict->dependents, &iter)) {
 			fr_strerror_printf_push("%s (%d)", dep->dependent, dep->count);
 		}
 
@@ -4719,11 +4721,6 @@ fr_dict_gctx_t *fr_dict_global_ctx_init(TALLOC_CTX *ctx, bool free_at_exit, char
 {
 	fr_dict_gctx_t *new_ctx;
 
-	if (!dict_dir) {
-		fr_strerror_const("No dictionary location provided");
-		return NULL;
-	}
-
 	new_ctx = talloc_zero(ctx, fr_dict_gctx_t);
 	if (!new_ctx) {
 		fr_strerror_const("Out of Memory");
@@ -4871,18 +4868,18 @@ void fr_dict_gctx_debug(FILE *fp, fr_dict_gctx_t const *gctx)
 	for (dict = fr_hash_table_iter_init(gctx->protocol_by_num, &dict_iter);
 	     dict;
 	     dict = fr_hash_table_iter_next(gctx->protocol_by_num, &dict_iter)) {
-		for (dep = fr_rb_iter_init_inorder(&dep_iter, dict->dependents);
+		for (dep = fr_rb_iter_init_inorder(dict->dependents, &dep_iter);
 		     dep;
-		     dep = fr_rb_iter_next_inorder(&dep_iter)) {
+		     dep = fr_rb_iter_next_inorder(dict->dependents, &dep_iter)) {
 			fprintf(fp, "\t%s is referenced from %s count (%d)\n",
 				dict->root->name, dep->dependent, dep->count);
 		}
 	}
 
 	if (gctx->internal) {
-		for (dep = fr_rb_iter_init_inorder(&dep_iter, gctx->internal->dependents);
+		for (dep = fr_rb_iter_init_inorder(gctx->internal->dependents, &dep_iter);
 		     dep;
-		     dep = fr_rb_iter_next_inorder(&dep_iter)) {
+		     dep = fr_rb_iter_next_inorder(gctx->internal->dependents, &dep_iter)) {
 			fprintf(fp, "\t%s is referenced from %s count (%d)\n",
 				gctx->internal->root->name, dep->dependent, dep->count);
 		}
@@ -5028,8 +5025,6 @@ fr_dict_attr_t const *fr_dict_attr_iterate_children(fr_dict_attr_t const *parent
 	fr_dict_attr_t const *ref;
 	size_t len, i, start;
 
-	if (!parent || !prev) return NULL;
-
 	ref = fr_dict_attr_ref(parent);
 	if (ref) parent = ref;
 
@@ -5113,8 +5108,6 @@ void fr_dict_attr_verify(char const *file, int line, fr_dict_attr_t const *da)
 	int i;
 	fr_dict_attr_t const *da_p;
 
-	if (!da) fr_fatal_assert_fail("CONSISTENCY CHECK FAILED %s[%d]: fr_dict_attr_t pointer was NULL", file, line);
-
 	(void) talloc_get_type_abort_const(da, fr_dict_attr_t);
 
 	if ((!da->flags.is_root) && (da->depth == 0)) {
@@ -5134,7 +5127,7 @@ void fr_dict_attr_verify(char const *file, int line, fr_dict_attr_t const *da)
 		(void) talloc_get_type_abort_const(da_p, fr_dict_attr_t);
 	}
 
-	for (i = da->depth, da_p = da; (i >= 0) && da; i--, da_p = da_p->parent) {
+	for (i = da->depth, da_p = da; i >= 0; i--, da_p = da_p->parent) {
 		if (!da_p) {
 			fr_fatal_assert_fail("CONSISTENCY CHECK FAILED %s[%d]: fr_dict_attr_t %s vendor: %u, attr %u: "
 					     "Depth indicated there should be a parent, but parent is NULL",

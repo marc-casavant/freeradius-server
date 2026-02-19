@@ -441,8 +441,6 @@ static int cf_pair_unescape(CONF_PAIR *cp, conf_parser_t const *rule)
 	p = cp->value;
 	q = str;
 	while (*p) {
-		unsigned int x;
-
 		if (*p != '\\') {
 			*(q++) = *(p++);
 			continue;
@@ -461,15 +459,30 @@ static int cf_pair_unescape(CONF_PAIR *cp, conf_parser_t const *rule)
 			break;
 
 		default:
-			if (*p >= '0' && *p <= '9' &&
-			    sscanf(p, "%3o", &x) == 1) {
-				if (!x) {
-					cf_log_err(cp, "Cannot have embedded zeros in value for %s", cp->attr);
+			if ((*p >= '0') && (*p <= '7')) {
+				unsigned long oct;
+				char *end;
+
+				oct = strtoul(p, &end, 8);
+				if (oct == ULONG_MAX) {
+					cf_log_err(cp, "Failed parsing octal string");
+				error:
+					talloc_free(str);
 					return -1;
 				}
 
-				*q++ = x;
-				p += 2;
+				if (!oct) {
+					cf_log_err(cp, "Cannot have embedded zeros in value at %s", p);
+					goto error;
+				}
+
+				if (oct > UINT8_MAX) {
+					cf_log_err(cp, "Invalid octal number in value at %s", p);
+					goto error;
+				}
+
+				*q++ = oct;
+				p = end;
 			} else {
 				*q++ = *p;
 			}
@@ -480,9 +493,8 @@ static int cf_pair_unescape(CONF_PAIR *cp, conf_parser_t const *rule)
 	*q = '\0';
 
 	unescaped = talloc_typed_strdup(cp, str); /* no embedded NUL */
-	if (!unescaped) return -1;
-
 	talloc_free(str);
+	if (!unescaped) return -1;
 
 	/*
 	 *	Replace the old value with the new one.
@@ -640,13 +652,13 @@ static int CC_HINT(nonnull(4,5)) cf_pair_parse_internal(TALLOC_CTX *ctx, void *o
 			 */
 			cf_pair_debug_log(cs, cp, rule);
 
-			if (cf_pair_is_parsed(cp)) continue;
+			if (cp->item.parsed) continue;
 			ret = func(value_ctx, entry, base, cf_pair_to_item(cp), rule);
 			if (ret < 0) {
 				talloc_free(array);
 				return -1;
 			}
-			cf_pair_mark_parsed(cp);
+			cp->item.parsed = true;
 		}
 		if (array) *(void **)out = array;
 	/*
@@ -690,10 +702,10 @@ static int CC_HINT(nonnull(4,5)) cf_pair_parse_internal(TALLOC_CTX *ctx, void *o
 
 		cf_pair_debug_log(cs, cp, rule);
 
-		if (cf_pair_is_parsed(cp)) return 0;
+		if (cp->item.parsed) return 0;
 		ret = func(ctx, out, base, cf_pair_to_item(cp), rule);
 		if (ret < 0) return -1;
-		cf_pair_mark_parsed(cp);
+		cp->item.parsed = true;
 	}
 
 	return was_dflt ? 1 : 0;
@@ -890,7 +902,7 @@ static int cf_section_parse_init(CONF_SECTION *cs, void *base, conf_parser_t con
 	 *	Don't re-initialize data which was already parsed.
 	 */
 	cp = cf_pair_find(cs, rule->name1);
-	if (cp && cp->parsed) return 0;
+	if (cp && cp->item.parsed) return 0;
 
 	if ((rule->type != FR_TYPE_STRING) &&
 	    (!(rule->flags & CONF_FLAG_FILE_READABLE)) &&
@@ -922,7 +934,7 @@ static void cf_section_parse_warn(CONF_SECTION *cs)
 			CONF_PAIR *cp;
 
 			cp = cf_item_to_pair(ci);
-			if (cp->parsed || cp->referenced || (ci->lineno < 0)) continue;
+			if (cp->item.parsed || cp->item.referenced || (ci->lineno < 0)) continue;
 
 			WARN("%s[%d]: The item '%s' is defined, but is unused by the configuration",
 			     ci->filename, ci->lineno,
@@ -1226,6 +1238,7 @@ int cf_section_parse(TALLOC_CTX *ctx, void *base, CONF_SECTION *cs)
 
 	cf_log_debug(cs, "%.*s}", SECTION_SPACE(cs), parse_spaces);
 
+	cf_item_mark_parsed(cs);
 	return 0;
 }
 

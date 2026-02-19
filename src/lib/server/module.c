@@ -186,7 +186,9 @@ static int cmd_set_module_status(UNUSED FILE *fp, FILE *fp_err, void *ctx, fr_cm
 	rlm_rcode_t rcode;
 
 	if (strcmp(info->argv[0], "alive") == 0) {
+		module_instance_data_unprotect(mi);
 		mi->force = false;
+		module_instance_data_protect(mi);
 		return 0;
 	}
 
@@ -196,8 +198,10 @@ static int cmd_set_module_status(UNUSED FILE *fp, FILE *fp_err, void *ctx, fr_cm
 		return -1;
 	}
 
+	module_instance_data_unprotect(mi);
 	mi->code = rcode;
 	mi->force = true;
+	module_instance_data_protect(mi);
 
 	return 0;
 }
@@ -364,7 +368,7 @@ static int8_t _mlg_module_instance_cmp(void const *one, void const *two)
 	fr_assert(a->ml && b->ml);
 
 	ret = CMP(a->ml, b->ml);
-	if (ret != 0) return 0;
+	if (ret != 0) return ret;
 
 	return CMP(a->number, b->number);
 }
@@ -628,9 +632,9 @@ void module_list_debug(module_list_t const *ml)
 	 *	they would be bootstrapped or inserted
 	 *	into the tree.
 	 */
-	for (inst = fr_rb_iter_init_inorder(&iter, ml->name_tree);
+	for (inst = fr_rb_iter_init_inorder(ml->name_tree, &iter);
 	     inst;
-	     inst = fr_rb_iter_next_inorder(&iter)) {
+	     inst = fr_rb_iter_next_inorder(ml->name_tree, &iter)) {
 		module_instance_debug(inst);
 	}
 }
@@ -690,9 +694,9 @@ int module_data_unprotect(module_instance_t const *mi, module_data_pool_t const 
  *	- 0 on success.
  *	- -1 on failure.
  */
-int module_instance_data_protect(module_instance_t const *mi)
+int module_instance_data_protect(module_instance_t *mi)
 {
-	return module_data_unprotect(mi, &mi->inst_pool);
+	return module_data_protect(mi, &mi->inst_pool);
 }
 
 /** Mark module data as read/write
@@ -702,7 +706,7 @@ int module_instance_data_protect(module_instance_t const *mi)
  *	- 0 on success.
  *	- -1 on failure.
  */
-int module_instance_data_unprotect(module_instance_t const *mi)
+int module_instance_data_unprotect(module_instance_t *mi)
 {
 	return module_data_unprotect(mi, &mi->inst_pool);
 }
@@ -1010,9 +1014,9 @@ void modules_thread_detach(module_list_t *ml)
 	 *	finding and extracting their thread specific
 	 *	data, and calling their detach methods.
 	 */
-	for (inst = fr_rb_iter_init_inorder(&iter, ml->name_tree);
+	for (inst = fr_rb_iter_init_inorder(ml->name_tree, &iter);
 	     inst;
-	     inst = fr_rb_iter_next_inorder(&iter)) {
+	     inst = fr_rb_iter_next_inorder(ml->name_tree, &iter)) {
 	     	module_instance_t		*mi = talloc_get_type_abort(inst, module_instance_t);
 		module_thread_instance_t	*ti = module_thread(mi);
 
@@ -1165,9 +1169,9 @@ int modules_thread_instantiate(TALLOC_CTX *ctx, module_list_t const *ml, fr_even
 		if (unlikely(ret < 0)) return ret;
 	}
 
-	for (inst = fr_rb_iter_init_inorder(&iter, ml->name_tree);
+	for (inst = fr_rb_iter_init_inorder(ml->name_tree, &iter);
 	     inst;
-	     inst = fr_rb_iter_next_inorder(&iter)) {
+	     inst = fr_rb_iter_next_inorder(ml->name_tree, &iter)) {
 		module_instance_t		*mi = talloc_get_type_abort(inst, module_instance_t); /* Sanity check*/
 
 		if (module_thread_instantiate(ctx, mi, el) < 0) {
@@ -1279,9 +1283,9 @@ int modules_instantiate(module_list_t const *ml)
 
 	DEBUG2("#### Instantiating %s modules ####", ml->name);
 
-	for (inst = fr_rb_iter_init_inorder(&iter, ml->name_tree);
+	for (inst = fr_rb_iter_init_inorder(ml->name_tree, &iter);
 	     inst;
-	     inst = fr_rb_iter_next_inorder(&iter)) {
+	     inst = fr_rb_iter_next_inorder(ml->name_tree, &iter)) {
 	     	module_instance_t *mi = talloc_get_type_abort(inst, module_instance_t);
 		if (module_instantiate(mi) < 0) return -1;
 	}
@@ -1370,9 +1374,9 @@ int modules_bootstrap(module_list_t const *ml)
 
 	DEBUG2("#### Bootstrapping %s modules ####", ml->name);
 
-	for (instance = fr_rb_iter_init_inorder(&iter, ml->name_tree);
+	for (instance = fr_rb_iter_init_inorder(ml->name_tree, &iter);
 	     instance;
-	     instance = fr_rb_iter_next_inorder(&iter)) {
+	     instance = fr_rb_iter_next_inorder(ml->name_tree, &iter)) {
 	     	module_instance_t *mi = talloc_get_type_abort(instance, module_instance_t);
 		if (module_bootstrap(mi) < 0) return -1;
 	}
@@ -1426,7 +1430,7 @@ static fr_slen_t module_instance_name(TALLOC_CTX *ctx, char **out,
  */
 static void module_detach_parent(module_instance_t *mi)
 {
-	if (!(mi->state & (MODULE_INSTANCE_BOOTSTRAPPED | MODULE_INSTANCE_BOOTSTRAPPED))) return;
+	if (!(mi->state & (MODULE_INSTANCE_BOOTSTRAPPED | MODULE_INSTANCE_INSTANTIATED))) return;
 
 	if (mi->parent) module_detach_parent(UNCONST(module_instance_t *, mi->parent));
 
@@ -1720,7 +1724,7 @@ module_instance_t *module_instance_alloc(module_list_t *ml,
 	 */
 	mi->exported = (module_t *)mi->module->exported;
 	if (unlikely(mi->exported == NULL)) {
-		ERROR("Missing public structure for \"%s\"", qual_inst_name);
+		ERROR("Missing public structure for \"%s\"", mi->name);
 		goto error;
 	}
 
@@ -1775,8 +1779,8 @@ static int _module_list_free(module_list_t *ml)
 	 *	tree.  It can cause problems when we delete children
 	 *	without the iterator knowing about it.
 	 */
-	while ((mi = fr_rb_iter_init_inorder(&iter, ml->name_tree)) != NULL) {
-		fr_rb_iter_delete_inorder(&iter);	/* Keeps the iterator sane */
+	while ((mi = fr_rb_iter_init_inorder(ml->name_tree, &iter)) != NULL) {
+		fr_rb_iter_delete_inorder(ml->name_tree, &iter);	/* Keeps the iterator sane */
 		talloc_free(mi);
 	}
 

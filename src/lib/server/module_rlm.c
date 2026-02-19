@@ -308,23 +308,23 @@ fr_pool_t *module_rlm_connection_pool_init(CONF_SECTION *module,
 	char trigger_prefix_buff[128];
 
 	fr_pool_t *pool;
-	char const *cs_name1, *cs_name2;
+	char const *mod_name1, *mod_name2;
 
 	int ret;
 
 #define parent_name(_x) cf_section_name(cf_item_to_section(cf_parent(_x)))
 
-	cs_name1 = cf_section_name1(module);
-	cs_name2 = cf_section_name2(module);
-	if (!cs_name2) cs_name2 = cs_name1;
+	mod_name1 = cf_section_name1(module);
+	mod_name2 = cf_section_name2(module);
+	if (!mod_name2) mod_name2 = mod_name1;
 
 	if (!trigger_prefix) {
-		snprintf(trigger_prefix_buff, sizeof(trigger_prefix_buff), "modules.%s.pool", cs_name1);
+		snprintf(trigger_prefix_buff, sizeof(trigger_prefix_buff), "modules.%s.pool", mod_name1);
 		trigger_prefix = trigger_prefix_buff;
 	}
 
 	if (!log_prefix) {
-		snprintf(log_prefix_buff, sizeof(log_prefix_buff), "rlm_%s (%s)", cs_name1, cs_name2);
+		snprintf(log_prefix_buff, sizeof(log_prefix_buff), "rlm_%s (%s)", mod_name1, mod_name2);
 		log_prefix = log_prefix_buff;
 	}
 
@@ -350,10 +350,11 @@ fr_pool_t *module_rlm_connection_pool_init(CONF_SECTION *module,
 	 */
 	mycs = cf_section_find(module, "pool", NULL);
 	if (!mycs) {
-		DEBUG4("%s: Adding pool section to config item \"%s\" to store pool references", log_prefix,
-		       cf_section_name(module));
+		DEBUG4("%s: Adding pool section to module configuration \"%s\" to store pool references", log_prefix,
+		       mod_name2);
 
 		mycs = cf_section_alloc(module, module, "pool", NULL);
+		if (!mycs) return NULL;
 	}
 
 	/*
@@ -362,7 +363,7 @@ fr_pool_t *module_rlm_connection_pool_init(CONF_SECTION *module,
 	 */
 	if (!cs) {
 		DEBUG4("%s: \"%s.pool\" section not found, using \"%s.pool\"", log_prefix,
-		       parent_name(cs), parent_name(mycs));
+		       mod_name1, parent_name(mycs));
 		cs = mycs;
 	}
 
@@ -618,14 +619,12 @@ fr_slen_t module_rlm_by_name_and_method(TALLOC_CTX *ctx, module_method_call_t *m
 		slen = tmpl_afrom_substr(ctx, &mmc->key, &our_name, T_BARE_WORD, NULL, t_rules);
 		if (slen < 0) {
 			fr_strerror_const_push("Invalid dynamic module selector expression");
-			talloc_free(mmc);
 			return slen;
 		}
 
 		if (!fr_sbuff_is_char(&our_name, ']')) {
 			fr_strerror_const_push("Missing terminating ']' for dynamic module selector");
 		error:
-			talloc_free(mmc);
 			return fr_sbuff_error(&our_name);
 		}
 		fr_sbuff_marker(&s_end, &our_name);
@@ -1337,9 +1336,9 @@ int modules_rlm_bootstrap(CONF_SECTION *root)
 	 *	register our redundant xlats.  But only when all of
 	 *	the items in such a section are the same.
 	 */
-	for (vm = fr_rb_iter_init_inorder(&iter, module_rlm_virtual_name_tree);
+	for (vm = fr_rb_iter_init_inorder(module_rlm_virtual_name_tree, &iter);
 	     vm;
-	     vm = fr_rb_iter_next_inorder(&iter)) {
+	     vm = fr_rb_iter_next_inorder(module_rlm_virtual_name_tree, &iter)) {
 		if (!vm->all_same) continue;
 
 		if (xlat_register_redundant(vm->cs) < 0) return -1;
@@ -1356,6 +1355,10 @@ int modules_rlm_free(void)
 {
 	if (talloc_free(rlm_modules_static) < 0) return -1;
 	rlm_modules_static = NULL;
+
+	if (talloc_free(rlm_modules_dynamic) < 0) return -1;
+	rlm_modules_dynamic = NULL;
+
 	if (talloc_free(module_rlm_virtual_name_tree) < 0) return -1;
 	module_rlm_virtual_name_tree = NULL;
 

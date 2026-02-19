@@ -16,7 +16,7 @@
 #  `Calling-Station-Id` to the normal format, as specified in RFC
 #  3580, Section 3.21.
 #
-#  ## recv Access-Request
+#  == recv Access-Request
 #
 #  In the `recv Access-Request section. the `wimax` module fixes up
 #  various non-standard WiMAX issues.
@@ -151,7 +151,7 @@
 #
 
 #
-#  ## Configuration Settings
+#  == Configuration Settings
 #
 wimax {
 	#
@@ -166,7 +166,7 @@ wimax {
 	#
 	#  By default, the EAP modules sends `MS-MPPE-*-Key` attributes.
 	#
-	#  The default virtual server (`raddb/sites-available/default`)
+	#  The default virtual server (`sites-available/default`)
 	#  contains examples of adding the `WiMAX-MSK`.
 	#
 	#  This configuration option makes the WiMAX module delete

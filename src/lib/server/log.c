@@ -779,9 +779,7 @@ static inline CC_HINT(always_inline) fr_sbuff_t *log_request_oid_buff(void)
 void log_request_pair(fr_log_lvl_t lvl, request_t *request,
 		      fr_pair_t const *parent, fr_pair_t const *vp, char const *prefix)
 {
-	fr_dict_attr_t const	*parent_da = NULL;
 	fr_sbuff_t		*oid_buff;
-	char const		*name;
 
 	if (!request->log.dst) return;
 
@@ -791,44 +789,22 @@ void log_request_pair(fr_log_lvl_t lvl, request_t *request,
 
 	oid_buff = log_request_oid_buff();
 
-	if (parent && (parent->vp_type != FR_TYPE_GROUP)) parent_da = parent->da;
-	if (fr_dict_attr_oid_print(oid_buff, parent_da, vp->da, false) <= 0) return;
+	if (fr_pair_print_name(oid_buff, parent ? parent->da : NULL, &vp) <= 0) return;
 
 	/*
 	 *	Recursively print grouped attributes.
 	 */
 	switch (vp->vp_type) {
 	case FR_TYPE_STRUCTURAL:
-		RDEBUGX(lvl, "%s%pV {", prefix ? prefix : "",
-			fr_box_strvalue_len(fr_sbuff_start(oid_buff), fr_sbuff_used(oid_buff)));
+		RDEBUGX(lvl, "%s%s{", prefix ? prefix : "", fr_sbuff_start(oid_buff));
 		log_request_pair_list(lvl, request, vp, &vp->vp_group, NULL);
 		RDEBUGX(lvl, "}");
-		break;
-
-	case FR_TYPE_QUOTED:
-		RDEBUGX(lvl, "%s%pV = \"%pV\"", prefix ? prefix : "",
-			fr_box_strvalue_len(fr_sbuff_start(oid_buff), fr_sbuff_used(oid_buff)),
-			&vp->data);
 		break;
 
 	default:
 		fr_assert(fr_type_is_leaf(vp->vp_type));
 
-		/*
-		 *	Manually add enum prefix when printing.
-		 */
-		if ((name = fr_value_box_enum_name(&vp->data)) != NULL) {
-			RDEBUGX(lvl, "%s%pV = ::%s", prefix ? prefix : "",
-				fr_box_strvalue_len(fr_sbuff_start(oid_buff), fr_sbuff_used(oid_buff)),
-				name);
-			break;
-		}
-		FALL_THROUGH;
-
-	case FR_TYPE_INTERNAL:
-		RDEBUGX(lvl, "%s%pV = %pV", prefix ? prefix : "",
-			fr_box_strvalue_len(fr_sbuff_start(oid_buff), fr_sbuff_used(oid_buff)),
-			&vp->data);
+		RDEBUGX(lvl, "%s%s%pV", prefix ? prefix : "", fr_sbuff_start(oid_buff), &vp->data);
 		break;
 	}
 }
@@ -978,7 +954,7 @@ void log_request_fd_event(UNUSED fr_event_list_t *el, int fd, UNUSED int flags, 
 	fr_sbuff_term_t const 	line_endings = FR_SBUFF_TERMS(L("\n"), L("\r"));
 
 	if (!RDEBUG_ENABLEDX(log_info->lvl)) {
-		while (read(fd, buffer, sizeof(buffer) > 0));
+		while (read(fd, buffer, sizeof(buffer)) > 0); /* discard all input */
 		return;
 	}
 
@@ -1132,6 +1108,7 @@ static const conf_parser_t log_config[] = {
 	{ FR_CONF_OFFSET("line_number", fr_log_t, line_number) },
 	{ FR_CONF_OFFSET("use_utc", fr_log_t, dates_utc) },
 	{ FR_CONF_OFFSET("print_level", fr_log_t, print_level) },
+	{ FR_CONF_OFFSET("suppress_secrets", fr_log_t, suppress_secrets) },
 	CONF_PARSER_TERMINATOR
 };
 

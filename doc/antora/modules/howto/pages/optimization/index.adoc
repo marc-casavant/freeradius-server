@@ -6,7 +6,7 @@ It can be challenging to identify issues or what component needs adjusting. To s
 
 == Why optimise?
 
-A poorly optimized FreeRADIUS server can lead to slow authentication times, timeouts, and even system instability. Enhance your FreeRADIUS server’s performance, reliability, and resource efficiency to enhance the user experience while maintaining a secure environment.
+A poorly optimized FreeRADIUS server can lead to slow authentication times, timeouts, and even system instability. Enhance your FreeRADIUS server's performance, reliability, and resource efficiency to enhance the user experience while maintaining a secure environment.
 
 === Performance
 
@@ -43,3 +43,6 @@ FreeRADIUS is packaged with some useful tools such as radsniff and radclient tha
 === xref:tuning/tuning_guide.adoc[Tuning Guide]
 
 Tuning the FreeRADIUS server and relevant components ensures optimal performance across the network.
+
+// Copyright (C) 2026 Network RADIUS SAS.  Licenced under CC-by-NC 4.0.
+// This documentation was developed by Network RADIUS SAS.

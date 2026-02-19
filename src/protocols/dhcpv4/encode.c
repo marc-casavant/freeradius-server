@@ -149,10 +149,6 @@ static ssize_t encode_value(fr_dbuff_t *dbuff,
 		 *	https://tools.ietf.org/html/rfc8415#section-10
 		 */
 		if (fr_dhcpv4_flag_dns_label(da)) {
-			fr_dbuff_marker_t	last_byte, src;
-
-			fr_dbuff_marker(&last_byte, &work_dbuff);
-			fr_dbuff_marker(&src, &work_dbuff);
 			slen = fr_dns_label_from_value_box_dbuff(&work_dbuff, false, &vp->data, NULL);
 			if (slen < 0) return slen;
 			break;
@@ -199,7 +195,7 @@ static ssize_t extend_option(fr_dbuff_t *dbuff, fr_dbuff_marker_t *hdr, size_t l
 
 	/*
 	 *	This can't follow the convention of operating on
-	 *	a chlld dbuff because it must work on and amidst
+	 *	a child dbuff because it must work on and amidst
 	 *	already-written data.
 	 */
 

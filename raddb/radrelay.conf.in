@@ -18,7 +18,7 @@
 #  just replace `radrelay`, you will need to add additional
 #  configuration.
 #
-#  See `raddb/sites-available/copy-acct-to-home-server` for a
+#  See `sites-available/copy-acct-to-home-server` for a
 #  more complete example.  That example is intended to be run
 #  as part of a larger RADIUS configuration, where the server
 #  also listens on ports 1812, etc.  The example given here
@@ -45,7 +45,7 @@
 #  `radrelay` solves this issue by "relaying" packets from one server to
 #  another, so they both have the same set of accounting data.
 #
-#  ## Overload
+#  == Overload
 #
 #  If the RADIUS server suddenly receives a many accounting packets,
 #  there may be insufficient CPU power to process them all in a timely
@@ -62,7 +62,7 @@
 #
 
 #
-#  ## General definitions
+#  == General definitions
 #
 #  The following options define where the server files are stored
 #  when installed. They are set by 'make' at compile time, and it
@@ -74,7 +74,7 @@ sysconfdir = @sysconfdir@
 localstatedir = @localstatedir@
 sbindir = @sbindir@
 logdir = @logdir@
-raddbdir = @raddbdir@
+confdir = @confdir@
 radacctdir = @radacctdir@
 
 #
@@ -87,7 +87,6 @@ name = radrelay
 #
 #  Location of config and logfiles.
 #
-confdir = ${raddbdir}
 run_dir = ${localstatedir}/run/${name}
 libdir = @libdir@
 pidfile = ${run_dir}/${name}.pid
@@ -102,7 +101,7 @@ max_request_time = 30
 cleanup_delay = 5
 
 #
-#  ## Logging configuration
+#  == Logging configuration
 #
 #  The following section defines global server logging options.
 #  For more configurable and detailed logging, the logging modules
@@ -170,7 +169,7 @@ security {
 }
 
 #
-#  ## Modules
+#  == Modules
 #
 #  If you need more modules, add them here. The `radrelay`
 #  configuration is very simple, and only includes one module.
@@ -186,7 +185,7 @@ instantiate {
 }
 
 #
-#  ## Home server configuration
+#  == Home server configuration
 #
 #
 #  NOTE: Proxying has changed in v4.  This example is no longer correct.
@@ -244,7 +243,7 @@ realm radrelay {
 }
 
 #
-#  ## Server configuration
+#  == Server configuration
 #
 #  We now define a virtual server to read RADIUS packets from a
 #  'detail' file, and proxy them to the dummy realm above.
@@ -263,7 +262,7 @@ server radrelay {
 		#  filename:: The filename here should be the same as the one used by the
 		#  main `radiusd` program.
 		#
-		#  It writes the file using the `detail` module (see `raddb/modules/detail`).
+		#  It writes the file using the `detail` module (see `modules/detail`).
 		#
 		filename = ${radacctdir}/detail
 
@@ -278,7 +277,7 @@ server radrelay {
 	#  Accounting-Request packet (which will be from the
 	#  "detail" reader above.
 	#
-	#  See also `raddb/sites-available/copy-acct-to-home-server`
+	#  See also `sites-available/copy-acct-to-home-server`
 	#  for additional description.
 	#
 	recv Accounting-Request {

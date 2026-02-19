@@ -1076,7 +1076,6 @@ static int timer_list_shared_deferred(fr_timer_list_t *tl)
 	return 0;
 }
 
-
 static uint64_t timer_list_lst_num_events(fr_timer_list_t *tl)
 {
 	return fr_lst_num_elements(tl->lst);
@@ -1256,6 +1255,8 @@ static fr_timer_list_t *timer_list_alloc(TALLOC_CTX *ctx, fr_timer_list_t *paren
 
 /** Allocate a new lst based timer list
  *
+ * @note Entries may be inserted in any order.
+ *
  * @param[in] ctx	to insert head timer event into.
  * @param[in] parent	to insert the head timer event into.
  */
@@ -1281,6 +1282,8 @@ fr_timer_list_t *fr_timer_list_lst_alloc(TALLOC_CTX *ctx, fr_timer_list_t *paren
 }
 
 /** Allocate a new sorted event timer list
+ *
+ * @note Entries must be inserted in the order that they will fire.
  *
  * @param[in] ctx	to allocate the event timer list from.
  * @param[in] parent	to insert the head timer event into.
@@ -1531,9 +1534,9 @@ void fr_timer_report(fr_timer_list_t *tl, fr_time_t now, void *uctx)
 			EVENT_DEBUG("    events %5s - %5s : %zu", decade_names[i - 1], decade_names[i], array[i]);
 		}
 
-		for (node = fr_rb_iter_init_inorder(&event_iter, locations[i]);
+		for (node = fr_rb_iter_init_inorder(locations[i], &event_iter);
 		     node;
-		     node = fr_rb_iter_next_inorder(&event_iter)) {
+		     node = fr_rb_iter_next_inorder(locations[i], &event_iter)) {
 			fr_event_counter_t	*counter = talloc_get_type_abort(node, fr_event_counter_t);
 
 			EVENT_DEBUG("                         : %u allocd at %s[%d]",

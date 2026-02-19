@@ -35,15 +35,7 @@
 
 extern fr_app_io_t proto_radius_udp;
 
-typedef struct {
-	char const			*name;			//!< socket name
-	int				sockfd;
-
-	fr_io_address_t			*connection;		//!< for connected sockets.
-
-	fr_stats_t			stats;			//!< statistics for this socket
-
-} proto_radius_udp_thread_t;
+typedef struct proto_radius_io_thread_s proto_radius_udp_thread_t;
 
 typedef struct {
 	CONF_SECTION			*cs;			//!< our configuration
@@ -144,43 +136,46 @@ static ssize_t mod_read(fr_listen_t *li, void **packet_ctx, fr_time_t *recv_time
 
 	data_size = udp_recv(thread->sockfd, flags, &address->socket, buffer, buffer_len, recv_time_p);
 	if (data_size < 0) {
-		PDEBUG2("proto_radius_udp got read error");
+		proto_radius_log(li, FR_RADIUS_FAIL_IO_ERROR, NULL,
+				 "%s", fr_strerror());
 		return data_size;
 	}
 
 	if (!data_size) {
-		DEBUG2("proto_radius_udp got no data: ignoring");
+		proto_radius_log(li, FR_RADIUS_FAIL_IO_ERROR, NULL,
+				 "Received no data");
 		return 0;
 	}
 
 	packet_len = data_size;
 
 	if (data_size < 20) {
-		DEBUG2("proto_radius_udp got 'too short' packet size %zd", data_size);
+		proto_radius_log(li, FR_RADIUS_FAIL_MIN_LENGTH_PACKET, &address->socket,
+				 "Received packet length %zu", packet_len);
 		thread->stats.total_malformed_requests++;
 		return 0;
 	}
 
 	if (packet_len > inst->max_packet_size) {
-		DEBUG2("proto_radius_udp got 'too long' packet size %zd > %u", data_size, inst->max_packet_size);
+		proto_radius_log(li, FR_RADIUS_FAIL_MIN_LENGTH_PACKET, &address->socket,
+				 "Received packet length %zu");
 		thread->stats.total_malformed_requests++;
 		return 0;
 	}
 
-	if ((buffer[0] == 0) || (buffer[0] > FR_RADIUS_CODE_MAX)) {
-		DEBUG("proto_radius_udp got invalid packet code %d", buffer[0]);
+	if ((buffer[0] == 0) || (buffer[0] >= FR_RADIUS_CODE_MAX)) {
+		proto_radius_log(li, FR_RADIUS_FAIL_UNKNOWN_PACKET_CODE, &address->socket,
+				 "Received packet code %u", buffer[0]);
 		thread->stats.total_unknown_types++;
 		return 0;
 	}
 
 	/*
-	 *      If it's not a RADIUS packet, ignore it.
+	 *      If it's not well-formed, discard it.
 	 */
 	if (!fr_radius_ok(buffer, &packet_len, inst->max_attributes, false, &reason)) {
-		/*
-		 *      @todo - check for F5 load balancer packets.  <sigh>
-		 */
-		DEBUG2("proto_radius_udp got a packet which isn't RADIUS: %s", fr_strerror());
+		proto_radius_log(li, reason, &address->socket,
+				 "Received invalid packet");
 		thread->stats.total_malformed_requests++;
 		return 0;
 	}
@@ -315,7 +310,7 @@ static int mod_open(fr_listen_t *li)
 
 	li->fd = sockfd = fr_socket_server_udp(&inst->ipaddr, &port, inst->port_name, true);
 	if (sockfd < 0) {
-		PERROR("Failed opening UDP socket");
+		cf_log_err(li->cs, "Failed opening UDP socket - %s", fr_strerror());
 	error:
 		return -1;
 	}
@@ -330,7 +325,7 @@ static int mod_open(fr_listen_t *li)
 		int on = 1;
 
 		if (setsockopt(sockfd, SOL_SOCKET, SO_REUSEPORT, &on, sizeof(on)) < 0) {
-			ERROR("Failed to set socket 'reuseport': %s", fr_syserror(errno));
+			cf_log_err(li->cs, "Failed to set socket 'reuseport': %s", fr_syserror(errno));
 			return -1;
 		}
 	}
@@ -341,7 +336,7 @@ static int mod_open(fr_listen_t *li)
 
 		opt = inst->recv_buff;
 		if (setsockopt(sockfd, SOL_SOCKET, SO_RCVBUF, &opt, sizeof(int)) < 0) {
-			WARN("Failed setting 'recv_buf': %s", fr_syserror(errno));
+			cf_log_warn(li->cs, "Failed setting 'recv_buf': %s", fr_syserror(errno));
 		}
 	}
 #endif
@@ -352,14 +347,15 @@ static int mod_open(fr_listen_t *li)
 
 		opt = inst->send_buff;
 		if (setsockopt(sockfd, SOL_SOCKET, SO_SNDBUF, &opt, sizeof(int)) < 0) {
-			WARN("Failed setting 'send_buf': %s", fr_syserror(errno));
+			cf_log_warn(li->cs, "Failed setting 'send_buf': %s", fr_syserror(errno));
 		}
 	}
 #endif
 
 	if (fr_socket_bind(sockfd, inst->interface, &ipaddr, &port) < 0) {
 		close(sockfd);
-		PERROR("Failed binding socket");
+		cf_log_err(li->cs, "Failed binding to socket - %s", fr_strerror());
+		cf_log_err(li->cs, DOC_ROOT_REF(troubleshooting/network/bind));
 		goto error;
 	}
 

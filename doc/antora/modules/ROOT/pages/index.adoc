@@ -19,7 +19,7 @@ modular, high-performance server that's deployed in VPNs, Wi-Fi, and
 enterprise networks.
 
 The default settings are sufficient for a simple install and basic
-functionality. The software’s flexibility presents challenges when
+functionality. The software's flexibility presents challenges when
 configuring it for advanced or specialized environments. There are
 many options and customisations for the FreeRADIUS
 server. Administrators must decide how and what settings to change,
@@ -43,8 +43,7 @@ even numbered releases should be packaged, e.g. 4.0 or 4.2.
 == Sections in this guide
 
 * xref:getstarted.adoc[Getting Started] guides you through a basic
-  install, xref:debugging/radiusd_X.adoc[debugging], and
-  xref:trouble-shooting/index.adoc[troubleshooting] the server. More
+  install, xref:debugging/radiusd_X.adoc[debugging]. More
   information about where to xref:gethelp.adoc[get help],
   xref:bestpractices.adoc[best practices], and a xref:faq.adoc[FAQ]
   are found here to help you resolve issues.
@@ -85,8 +84,8 @@ even numbered releases should be packaged, e.g. 4.0 or 4.2.
   xref:developers:coding-methods.adoc[coding standards],
   xref:developers:coverage.adoc[coverage], and
   xref:developers:coccinelle.adoc[patches] used when developing.  This
-  guide includes information about xref:developers:bugs.adoc[bugs
-  reports], and xref:developers:contributing.adoc[contributing] to the
+  guide includes information about xref:developers:bugs/bugs.adoc[bugs
+  ], and xref:developers:contributing.adoc[contributing] to the
   project using GitHub.
 
 == Why v4?

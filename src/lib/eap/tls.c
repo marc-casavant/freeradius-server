@@ -495,7 +495,8 @@ static eap_tls_status_t eap_tls_session_status(request_t *request, eap_session_t
 		return EAP_TLS_RECORD_SEND;
 	}
 
-	if ((tls_session->info.content_type == SSL3_RT_HANDSHAKE) && (tls_session->info.origin == 0)) {
+	if ((tls_session->info.content_type == SSL3_RT_HANDSHAKE) &&
+	    (tls_session->info.origin == TLS_INFO_ORIGIN_RECORD_RECEIVED)) {
 		REDEBUG("Unexpected ACK received:  We sent no previous messages");
 		return EAP_TLS_INVALID;
 	}
@@ -534,7 +535,7 @@ static eap_tls_status_t eap_tls_session_status(request_t *request, eap_session_t
 		/*
 		 *	If the last message was from us, then the session is established
 		 */
-		if (tls_session->info.origin == 1) return EAP_TLS_ESTABLISHED;
+		if (tls_session->info.origin == TLS_INFO_ORIGIN_RECORD_SENT) return EAP_TLS_ESTABLISHED;
 		REDEBUG("Invalid ACK received: %d", tls_session->info.content_type);
 		return EAP_TLS_INVALID;
 	}
@@ -646,6 +647,14 @@ static eap_tls_status_t eap_tls_verify(request_t *request, eap_session_t *eap_se
 	frag_len = this_round->response->length - header_len;
 
 	/*
+	 *	This fragment has no data, but the header says that there is more data!
+	 */
+	if (!frag_len && TLS_MORE_FRAGMENTS(eap_tls_data->flags)) {
+		REDEBUG("Peer sent EAP-TLS with zero-length fragment and 'more' bit set - if there is no data, there should not be more!");
+		return EAP_TLS_INVALID;
+	}
+
+	/*
 	 *	The L bit (length included) is set to indicate the
 	 *	presence of the four octet TLS Message Length field,
 	 *	and MUST be set for the first fragment of a fragmented
@@ -660,6 +669,11 @@ static eap_tls_status_t eap_tls_verify(request_t *request, eap_session_t *eap_se
 	 */
 	if (TLS_LENGTH_INCLUDED(eap_tls_data->flags)) {
 		size_t total_len;
+
+		if (eap_tls_data->data[0] || eap_tls_data->data[1]) {
+			REDEBUG("TLS record length is > 65536");
+			return EAP_TLS_INVALID;
+		}
 
 		total_len = eap_tls_data->data[2] * 256 | eap_tls_data->data[3];
 		if (frag_len > total_len) {
@@ -862,12 +876,12 @@ static unlang_action_t eap_tls_handshake_resume(request_t *request, void *uctx)
 			 *	Returns UNLANG_ACTION_PUSHED_CHILD unless something has failed
 			 */
 			ret = fr_tls_session_async_handshake_push(request, tls_session);
-			if (tls_session->result != FR_TLS_RESULT_SUCCESS) {
-				REDEBUG("TLS receive handshake failed during operation");
-				fr_tls_cache_deny(request, tls_session);
-				eap_tls_session->state = EAP_TLS_FAIL;
-				return ret;
-			}
+			if (ret != UNLANG_ACTION_FAIL) return ret;
+
+			REDEBUG("TLS receive handshake failed during operation");
+			fr_tls_cache_deny(request, tls_session);
+			eap_tls_session->state = EAP_TLS_FAIL;
+			return ret;
 		}
 	}
 #endif
@@ -878,7 +892,7 @@ static unlang_action_t eap_tls_handshake_resume(request_t *request, void *uctx)
 	 *	TLS proper can decide what to do, then.
 	 */
 	if (tls_session->dirty_out.used > 0) {
-		eap_tls_request(request, eap_session);
+		if (eap_tls_request(request, eap_session) < 0) goto fail;
 		eap_tls_session->state = EAP_TLS_HANDLED;
 		goto finish;
 	}
@@ -906,6 +920,7 @@ static unlang_action_t eap_tls_handshake_resume(request_t *request, void *uctx)
 	/*
 	 *	Who knows what happened...
 	 */
+fail:
 	REDEBUG("TLS failed during operation");
 	eap_tls_session->state = EAP_TLS_FAIL;
 
@@ -957,11 +972,13 @@ static inline CC_HINT(always_inline) unlang_action_t eap_tls_handshake_push(requ
  * session object SHOULD be maintained even after the session is completed, for session
  * resumption.
  *
+ * Note that we never return FAIL to the interpreter.  Instead, we
+ * send the EAP failure back to the supplicant.
+ *
  * @param request	the request
  * @param eap_session	to continue.
  * @return
- *	- EAP_TLS_ESTABLISHED
- *	- EAP_TLS_HANDLED
+ *	- UNLANG_ACTION_CALCULATE_RESULT
  */
 unlang_action_t eap_tls_process(request_t *request, eap_session_t *eap_session)
 {
@@ -1042,8 +1059,11 @@ unlang_action_t eap_tls_process(request_t *request, eap_session_t *eap_session)
 		 *	ACK fragments until we get a complete TLS record.
 		 */
 		if (eap_tls_session->state != EAP_TLS_RECORD_RECV_COMPLETE) {
-			eap_tls_ack(request, eap_session);
-			eap_tls_session->state = EAP_TLS_HANDLED;
+			if (eap_tls_ack(request, eap_session) < 0) {
+				eap_tls_session->state = EAP_TLS_FAIL;
+			} else {
+				eap_tls_session->state = EAP_TLS_HANDLED;
+			}
 			goto done;
 		}
 
@@ -1093,8 +1113,11 @@ unlang_action_t eap_tls_process(request_t *request, eap_session_t *eap_session)
 			goto done;
 		}
 
-		eap_tls_request(request, eap_session);
-		eap_tls_session->state = EAP_TLS_HANDLED;
+		if (eap_tls_request(request, eap_session) < 0) {
+			eap_tls_session->state = EAP_TLS_FAIL;
+		} else {
+			eap_tls_session->state = EAP_TLS_HANDLED;
+		}
 		goto done;
 
 	/*

@@ -792,7 +792,7 @@ int main(int argc, char *argv[])
 				break;
 
 			case 'd':
-				main_config_raddb_dir_set(config, optarg);
+				main_config_confdir_set(config, optarg);
 				break;
 
 			case 'D':
@@ -922,7 +922,7 @@ int main(int argc, char *argv[])
 	/*
 	 *	Load the custom dictionary
 	 */
-	if (fr_dict_read(dict, config->raddb_dir, FR_DICTIONARY_FILE) == -1) {
+	if (fr_dict_read(dict, config->confdir, FR_DICTIONARY_FILE) == -1) {
 		PERROR("Failed to initialize the dictionaries");
 		EXIT_WITH_FAILURE;
 	}
@@ -999,7 +999,7 @@ int main(int argc, char *argv[])
 		client_add(NULL, client);
 	}
 
-	if (server_init(config->root_cs, config->raddb_dir, dict) < 0) EXIT_WITH_FAILURE;
+	if (server_init(config->root_cs, config->confdir, dict) < 0) EXIT_WITH_FAILURE;
 
 	vs = virtual_server_find("default");
 	if (!vs) {
@@ -1354,13 +1354,13 @@ static NEVER_RETURNS void usage(main_config_t const *config, int status)
 	fprintf(output, "Usage: %s [options]\n", config->name);
 	fprintf(output, "Options:\n");
 	fprintf(output, "  -c <count>         Run packets through the interpreter <count> times\n");
-	fprintf(output, "  -d <raddb_dir>     Configuration files are in \"raddb_dir/*\".\n");
+	fprintf(output, "  -d <confdir>       Configuration file directory. (defaults to " CONFDIR ").");
 	fprintf(output, "  -D <dict_dir>      Dictionary files are in \"dict_dir/*\".\n");
 	fprintf(output, "  -f <file>          Filter reply against attributes in 'file'.\n");
 	fprintf(output, "  -h                 Print this help message.\n");
 	fprintf(output, "  -i <file>          File containing request attributes.\n");
 	fprintf(output, "  -m                 On SIGINT or SIGQUIT exit cleanly instead of immediately.\n");
-	fprintf(output, "  -n <name>          Read raddb/name.conf instead of raddb/radiusd.conf.\n");
+	fprintf(output, "  -n <name>          Read ${confdir}/name.conf instead of ${confdir}/radiusd.conf.\n");
 	fprintf(output, "  -o <file>          Output file for the reply.\n");
 	fprintf(output, "  -p <radius|...>    Define which protocol namespace is used to read the file\n");
 	fprintf(output, "                     Use radius, dhcpv4, or dhcpv6\n");

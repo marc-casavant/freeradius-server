@@ -268,11 +268,11 @@ int fr_dict_str_to_argv(char *str, char **argv, int max_argc)
 	return argc;
 }
 
-static int dict_read_sscanf_i(unsigned int *pvalue, char const *str)
+static bool dict_read_sscanf_i(unsigned int *pvalue, char const *str)
 {
 	int unsigned ret = 0;
 	int base = 10;
-	static char const *tab = "0123456789";
+	char const *tab = "0123456789";
 
 	if ((str[0] == '0') &&
 	    ((str[1] == 'x') || (str[1] == 'X'))) {
@@ -288,7 +288,9 @@ static int dict_read_sscanf_i(unsigned int *pvalue, char const *str)
 		if (*str == '.') break;
 
 		c = memchr(tab, tolower((uint8_t)*str), base);
-		if (!c) return 0;
+		if (!c) return false;
+
+		if (ret >= (UINT_MAX / base)) return false;
 
 		ret *= base;
 		ret += (c - tab);
@@ -296,7 +298,7 @@ static int dict_read_sscanf_i(unsigned int *pvalue, char const *str)
 	}
 
 	*pvalue = ret;
-	return 1;
+	return true;
 }
 
 /** Set a new root dictionary attribute
@@ -1057,15 +1059,23 @@ static int dict_attr_allow_dup(fr_dict_attr_t const *da)
 
 	switch (da->type) {
 	/*
-	 *	For certain STRUCTURAL types, we allow strict duplicates
-	 *	as if the user wants to add extra children in the custom
+	 *	For certain types, we allow strict duplicates as if
+	 *	the user wants to add extra children in the custom
 	 *	dictionary, or wants to avoid ordering issues between
 	 *	multiple dictionaries, we need to support this.
 	 */
 	case FR_TYPE_VSA:
 	case FR_TYPE_VENDOR:
 	case FR_TYPE_TLV:
-		if (fr_dict_attr_cmp_fields(da, found) == 0) return -1;
+		if (fr_dict_attr_cmp_fields(da, found) == 0) return 0;
+		break;
+
+	case FR_TYPE_LEAF:
+		/*
+		 *	Leaf types can be duplicated if they are identical.
+		 */
+		if ((da->type == found->type) &&
+		    (fr_dict_attr_cmp_fields(da, found) == 0)) return 0;
 		break;
 
 	default:
@@ -1075,12 +1085,12 @@ static int dict_attr_allow_dup(fr_dict_attr_t const *da)
 	if (dup_name) {
 		fr_strerror_printf("Duplicate attribute name '%s' in namespace '%s'.  Originally defined %s[%d]",
 				   da->name, da->parent->name, dup_name->filename, dup_name->line);
-		return 0;
+		return -1;
 	}
 
 	fr_strerror_printf("Duplicate attribute number %u in parent '%s'.  Originally defined %s[%d]",
 				da->attr, da->parent->name, dup_num->filename, dup_num->line);
-	return 0;
+	return -1;
 }
 
 static int dict_struct_finalise(dict_tokenize_ctx_t *dctx)
@@ -1484,7 +1494,7 @@ static int dict_read_process_alias(dict_tokenize_ctx_t *dctx, char **argv, int a
 					fr_dict_attr_unconst(parent), argv[1]);
 	}
 
-	return dict_attr_alias_add(fr_dict_attr_unconst(parent), argv[0], da);
+	return dict_attr_alias_add(fr_dict_attr_unconst(parent), argv[0], da, true);
 }
 
 /*
@@ -1639,7 +1649,7 @@ static int dict_read_process_attribute(dict_tokenize_ctx_t *dctx, char **argv, i
 	 */
 	if (da->type == FR_TYPE_UNION) {
 		fr_strerror_const("ATTRIBUTEs of type 'union' can only be defined as a MEMBER of data type 'struct'");
-		return -1;
+		goto error;
 	}
 
 	/*
@@ -1653,7 +1663,7 @@ static int dict_read_process_attribute(dict_tokenize_ctx_t *dctx, char **argv, i
 		} else if (da->flags.length != parent->flags.length) {
 			fr_strerror_printf("Invalid length %u for struct, the parent union %s has a different length %u",
 					   da->flags.length, parent->name, parent->flags.length);
-			return -1;
+			goto error;
 		}
 	}
 
@@ -1718,7 +1728,7 @@ static int dict_read_process_attribute(dict_tokenize_ctx_t *dctx, char **argv, i
 		 *	the VALUE also contains a pointer to the child struct.
 		 */
 		if (key && (dict_attr_enum_add_name(fr_dict_attr_unconst(key), da->name, &box, false, true, da) < 0)) {
-			goto error;
+			return -1;	/* Leaves attr added */
 		}
 
 		/*
@@ -1750,8 +1760,8 @@ static int dict_read_process_attribute(dict_tokenize_ctx_t *dctx, char **argv, i
 	if (parent->type == FR_TYPE_UNION) {
 		fr_assert(parent->parent);
 
-		if (dict_attr_alias_add(parent->parent, da->name, da) < 0) {
-			goto error;
+		if (dict_attr_alias_add(parent->parent, da->name, da, false) < 0) {
+			return -1;	/* Leaves attr added */
 		}
 	}
 
@@ -1852,10 +1862,8 @@ static int dict_read_process_begin_protocol(dict_tokenize_ctx_t *dctx, char **ar
 
 	/*
 	 *	Add a temporary fixup pool
-	 *
-	 *	@todo - make a nested ctx?
 	 */
-	dict_fixup_init(NULL, &dctx->fixup);
+	if (dict_fixup_init(&dctx->fixup) < 0) return -1;
 
 	/*
 	 *	We're in the middle of loading this dictionary.  Tell
@@ -1970,8 +1978,7 @@ static int dict_read_process_begin_vendor(dict_tokenize_ctx_t *dctx, char **argv
 		}
 
 		if (dict_attr_add_to_namespace(UNCONST(fr_dict_attr_t *, vsa_da), new) < 0) {
-			talloc_free(new);
-			return -1;
+			return -1; /* leaves attr added */
 		}
 
 		vendor_da = new;
@@ -2142,7 +2149,7 @@ static int dict_read_process_end(dict_tokenize_ctx_t *dctx, char **argv, int arg
 	 *	No checks on the attribute, we're just popping _A_ frame,
 	 *	we don't care what attribute it represents.
 	 */
-	if (argc == 1) return 0;
+	if (argc == 0) return 0;
 
 	/*
 	 *	This is where we'll have begun the previous search to
@@ -2327,7 +2334,7 @@ static int dict_read_process_enum(dict_tokenize_ctx_t *dctx, char **argv, int ar
 	default:
 		fr_strerror_printf("ENUMs can only be a leaf type, not %s",
 				   fr_type_to_str(da->type));
-		break;
+		goto error;
 	}
 
 	parent = CURRENT_FRAME(dctx)->da;
@@ -2525,7 +2532,7 @@ static int dict_read_process_member(dict_tokenize_ctx_t *dctx, char **argv, int 
 		CURRENT_FRAME(dctx)->struct_is_closed = da;
         }
 
-	if (unlikely(dict_attr_num_init(da, ++CURRENT_FRAME(dctx)->member_num) < 0)) goto error;
+	if (unlikely(dict_attr_num_init(da, CURRENT_FRAME(dctx)->member_num + 1) < 0)) goto error;
 	if (unlikely(dict_attr_finalise(&da, argv[0]) < 0)) goto error;
 
 	/*
@@ -2631,6 +2638,11 @@ static int dict_read_process_member(dict_tokenize_ctx_t *dctx, char **argv, int 
 			return -1;
 		}
 	}
+
+	/*
+	 *	Now that we know everything is OK, we can increase the number.
+	 */
+	CURRENT_FRAME(dctx)->member_num++;
 
 	/*
 	 *	Set or clear the attribute for VALUE statements.
@@ -3460,7 +3472,7 @@ static int dict_from_file(fr_dict_t *dict,
 
 	memset(&dctx, 0, sizeof(dctx));
 	dctx.dict = dict;
-	dict_fixup_init(NULL, &dctx.fixup);
+	if (dict_fixup_init(&dctx.fixup) < 0) return -1;
 	dctx.stack[0].da = dict->root;
 	dctx.stack[0].nest = NEST_TOP;
 
@@ -3798,32 +3810,45 @@ int fr_dict_read(fr_dict_t *dict, char const *dir, char const *filename)
 /*
  *	External API for testing
  */
-int fr_dict_parse_str(fr_dict_t *dict, char *buf, fr_dict_attr_t const *parent)
+int fr_dict_parse_str(fr_dict_t *dict, char const *input, fr_dict_attr_t const *parent)
 {
 	int			argc;
 	char			*argv[DICT_MAX_ARGV];
 	int			ret;
-	fr_dict_attr_flags_t	base_flags;
+	fr_dict_attr_flags_t	base_flags = {};
 	dict_tokenize_ctx_t	dctx;
+	char			*buf;
 
 	INTERNAL_IF_NULL(dict, -1);
 
-	argc = fr_dict_str_to_argv(buf, argv, DICT_MAX_ARGV);
-	if (argc == 0) return 0;
+	/*
+	 *	str_to_argv() mangles the input buffer, which messes with 'unit_test_attribute -w foo'
+	 */
+	buf = talloc_strdup(NULL, input);
 
+	argc = fr_dict_str_to_argv(buf, argv, DICT_MAX_ARGV);
+	if (argc == 0) {
+		talloc_free(buf);
+		return 0;
+	}
 
 	memset(&dctx, 0, sizeof(dctx));
 	dctx.dict = dict;
+	
+	dctx.stack[0].da = parent;
 	dctx.stack[0].nest = NEST_TOP;
 
-	if (dict_fixup_init(NULL, &dctx.fixup) < 0) return -1;
+	if (dict_fixup_init(&dctx.fixup) < 0) {
+	error:
+		TALLOC_FREE(dctx.fixup.pool);
+		talloc_free(buf);
+		return -1;
+	}
 
 	if (strcasecmp(argv[0], "VALUE") == 0) {
 		if (argc < 4) {
 			fr_strerror_printf("VALUE needs at least 4 arguments, got %i", argc);
-		error:
-			TALLOC_FREE(dctx.fixup.pool);
-			return -1;
+			goto error;
 		}
 
 		if (!fr_dict_attr_by_oid(NULL, fr_dict_root(dict), argv[1])) {
@@ -3832,25 +3857,34 @@ int fr_dict_parse_str(fr_dict_t *dict, char *buf, fr_dict_attr_t const *parent)
 			goto error;
 		}
 		ret = dict_read_process_value(&dctx, argv + 1, argc - 1, &base_flags);
-		if (ret < 0) goto error;
 
 	} else if (strcasecmp(argv[0], "ATTRIBUTE") == 0) {
-		if (parent && (parent != dict->root)) {
+		if (parent != dict->root) {
 			(void) dict_dctx_push(&dctx, parent, NEST_NONE);
 		}
 
-		memset(&base_flags, 0, sizeof(base_flags));
-
 		ret = dict_read_process_attribute(&dctx,
 						  argv + 1, argc - 1, &base_flags);
-		if (ret < 0) goto error;
+
+	} else if (strcasecmp(argv[0], "DEFINE") == 0) {
+		if (parent != dict->root) {
+			(void) dict_dctx_push(&dctx, parent, NEST_NONE);
+		}
+
+		ret = dict_read_process_define(&dctx,
+					       argv + 1, argc - 1, &base_flags);
+
 	} else if (strcasecmp(argv[0], "VENDOR") == 0) {
 		ret = dict_read_process_vendor(&dctx, argv + 1, argc - 1, &base_flags);
-		if (ret < 0) goto error;
+
 	} else {
 		fr_strerror_printf("Invalid input '%s'", argv[0]);
 		goto error;
 	}
+
+	if (ret < 0) goto error;
+
+	talloc_free(buf);
 
 	return dict_finalise(&dctx);
 }

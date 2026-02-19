@@ -946,7 +946,7 @@ CONF_SECTION *virtual_server_cs(virtual_server_t const *vs)
 /** Resolve a CONF_SECTION to a virtual server
  *
  */
-virtual_server_t const *virtual_server_from_cs(CONF_SECTION *server_cs)
+virtual_server_t const *virtual_server_from_cs(CONF_SECTION const *server_cs)
 {
 	virtual_server_t *vs;
 
@@ -1006,6 +1006,21 @@ virtual_server_t const *virtual_server_by_child(CONF_ITEM const *ci)
 	}
 
 	return cf_data_value(cd);
+}
+
+/** Return the packet type attribute for a virtual server specified by a config section
+ *
+ * @param[in] server_cs		to look for packet type attribute in.
+ * @return
+ *	- NULL on error.
+ *	- packet type dict attr on success.
+ */
+fr_dict_attr_t const *virtual_server_packet_type_by_cs(CONF_SECTION const *server_cs)
+{
+	virtual_server_t const *vs = virtual_server_from_cs(server_cs);
+
+	if (unlikely(!vs || !vs->process_module || !vs->process_module->packet_type)) return NULL;
+	return *vs->process_module->packet_type;
 }
 
 /** Wrapper for the config parser to allow pass1 resolution of virtual servers
@@ -1091,14 +1106,19 @@ static inline CC_HINT(always_inline) int virtual_server_compile_finally_sections
 		.retry = RETRY_INIT,
 	};
 
-	fr_dict_attr_t const	*da = NULL;
+	fr_dict_attr_t const	*da;
 	fr_dict_attr_t const 	**da_p = vs->process_module->packet_type;
 	CONF_SECTION		*subcs;
 
-	if (da_p) {
-		da = *da_p;
-		fr_assert_msg(da != NULL, "Packet-Type attr not resolved");
+	if (!da_p || !*da_p) {
+		subcs = cf_section_find(vs->server_cs, "finally", CF_IDENT_ANY);
+		if (!subcs) return 0;
+
+		cf_log_err(subcs, "Invalid 'finally' section - virtual server does not define a 'packet_type'");
+		return -1;
 	}
+
+	da = *da_p;
 
 	/*
 	 *	Iterate over all the finally sections, trying to resolve
@@ -1113,7 +1133,7 @@ static inline CC_HINT(always_inline) int virtual_server_compile_finally_sections
 		int				ret;
 		void				*instruction;
 
-		if (!cf_section_name2(subcs)) {
+		if (!packet_type) {
 			if (vs->finally_default) {
 				cf_log_err(subcs, "Duplicate 'finally { ... }' section");
 				return -1;
@@ -1162,7 +1182,7 @@ static inline CC_HINT(always_inline) int virtual_server_compile_finally_sections
 			goto forbid;
 		}
 
-		if (key.vb_uint16 > talloc_array_length(vs->finally_by_packet_type)) {
+		if (key.vb_uint16 >= talloc_array_length(vs->finally_by_packet_type)) {
 			MEM(vs->finally_by_packet_type = talloc_realloc_zero(vs, vs->finally_by_packet_type,
 									     void *, key.vb_uint16 + 1));
 		}
@@ -1201,6 +1221,7 @@ static int virtual_server_compile_sections(virtual_server_t *vs, tmpl_rules_t co
 	void				*instance = vs->process_mi->data;
 	CONF_SECTION			*server = vs->server_cs;
 	int				i, found;
+	bool				fail;
 	CONF_SECTION			*subcs = NULL;
 
 	found = 0;
@@ -1213,7 +1234,7 @@ static int virtual_server_compile_sections(virtual_server_t *vs, tmpl_rules_t co
 	 *	definitely want to tell people when running in debug mode.
 	 */
 	if (check_config || DEBUG_ENABLED) {
-		bool fail = false;
+		fail = false;
 
 		while ((subcs = cf_section_next(server, subcs)) != NULL) {
 			char const *name;
@@ -1363,6 +1384,59 @@ static int virtual_server_compile_sections(virtual_server_t *vs, tmpl_rules_t co
 		cf_log_err(server, "The server WILL NOT be able to process packets until the configuration is fixed");
 		return -1;
 	}
+
+	if (!check_config && !DEBUG_ENABLED) return found;
+
+	fail = false;
+
+	/*
+	 *	Check for 'send FOO' and 'recv BAR' which are unused.
+	 */
+	for (subcs = cf_section_first(server);
+	     subcs != NULL;
+	     subcs = cf_section_next(server, subcs)) {
+		char const *name, *name2;
+
+		if (cf_item_is_parsed(subcs)) continue;
+
+		name = cf_section_name1(subcs);
+
+		/*
+		 *	Allow them to "comment out" an entire block by prefixing the name with "-", ala
+		 *	"-sql".
+		 */
+		if (*name == '-') continue;
+
+		/*
+		 *	Local clients are parsed by the listener after the virtual server is bootstrapped.  So
+		 *	we just ignore them here.
+		 */
+		if (strcmp(name, "client") == 0) continue;
+
+		/*
+		 *	When checking the configuration, it is an error to have an unused "send FOO" or "recv
+		 *	BAR" section.
+		 */
+		if (check_config && ((strcmp(name, "recv") == 0) || (strcmp(name, "send") == 0))) {
+			cf_log_err(subcs, "Unused processing section %s ... {", name);
+			cf_log_err(subcs, "If this is intentional, please rename it to '-%s'", name);
+			fail = true;
+			continue;
+		}
+
+		name2 = cf_section_name2(subcs);
+		if (!name2) {
+			cf_log_warn(subcs, "Ignoring %s { - it is unused", name);
+		} else {
+			cf_log_warn(subcs, "Ignoring %s %s { - it is unused", name, name2);
+		}
+	}
+
+	/*
+	 *	Be nice to people, and complaing about ALL unused processing sections.  That way they don't
+	 *	have to run the server many, many, times to see all of the errors.
+	 */
+	if (fail) return -1;
 
 	return found;
 }
@@ -1723,6 +1797,7 @@ static fr_dict_t const *virtual_server_local_dict(CONF_SECTION *server_cs, fr_di
 	 */
 	cf_data_remove(server_cs, fr_dict_t, "dict");
 	cf_data_add(server_cs, dict, "dict", false);
+	cf_item_mark_parsed(cs);
 
 	return dict;
 }
@@ -1750,6 +1825,8 @@ int virtual_servers_open(fr_schedule_t *sc)
 		size_t			j, listener_cnt;
 
 		listeners = virtual_servers[i]->listeners;
+		if (!listeners) continue; /* servers can have no listeners */
+
 		listener_cnt = talloc_array_length(listeners);
 
 		for (j = 0; j < listener_cnt; j++) {
@@ -1783,9 +1860,6 @@ int virtual_servers_open(fr_schedule_t *sc)
 							   listener->proto_mi->conf);
 			module_instance_data_protect(listener->proto_mi);
 			if (unlikely(ret < 0)) {
-				cf_log_err(listener->proto_mi->conf,
-					   "Failed opening listener %s",
-					   listener->proto_module->common.name);
 				return -1;
 			}
 

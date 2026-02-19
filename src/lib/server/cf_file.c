@@ -307,27 +307,35 @@ char const *cf_expand_variables(char const *cf, int lineno,
 			 *	it's the property of a section.
 			 */
 			if (q) {
-				CONF_SECTION *find = cf_item_to_section(ci);
+				CONF_SECTION *find;
+				char const *f;
+				size_t flen;
 
 				if (ci->type != CONF_ITEM_SECTION) {
 					ERROR("%s[%d]: Can only reference properties of sections", cf, lineno);
 					return NULL;
 				}
 
+				find = cf_item_to_section(ci);
 				switch (fr_table_value_by_str(conf_property_name, q, CONF_PROPERTY_INVALID)) {
 				case CONF_PROPERTY_NAME:
-					strcpy(p, find->name1);
+					f = find->name1;
 					break;
 
 				case CONF_PROPERTY_INSTANCE:
-					strcpy(p, find->name2 ? find->name2 : find->name1);
+					f = find->name2 ? find->name2 : find->name1;
 					break;
 
 				default:
 					ERROR("%s[%d]: Invalid property '%s'", cf, lineno, q);
 					return NULL;
 				}
-				p += strlen(p);
+
+				flen = talloc_array_length(f) - 1;
+				if ((p + flen) >= (output + outsize)) goto too_long;
+
+				memcpy(p, f, flen);
+				p += flen;
 				ptr = next;
 
 			} else if (ci->type == CONF_ITEM_PAIR) {
@@ -363,6 +371,7 @@ char const *cf_expand_variables(char const *cf, int lineno,
 				}
 
 				strcpy(p, cp->value);
+				cp->item.referenced = true;
 				p += strlen(p);
 				ptr = next;
 
@@ -461,6 +470,7 @@ char const *cf_expand_variables(char const *cf, int lineno,
 
 	check_eos:
 		if (p >= (output + outsize)) {
+		too_long:
 			ERROR("%s[%d]: Reference \"%s\" is too long",
 			      cf, lineno, input);
 			return NULL;
@@ -594,7 +604,10 @@ static int cf_file_open(CONF_SECTION *cs, char const *filename, bool from_dir, F
 			return -1;
 		}
 
-		if (fstatat(my_fd, r, &my_file.buf, 0) < 0) goto error;
+		if (fstatat(my_fd, r, &my_file.buf, 0) < 0) {
+			if (my_fd != AT_FDCWD) close(my_fd);
+			goto error;
+		}
 
 		file = fr_rb_find(tree, &my_file);
 
@@ -670,8 +683,8 @@ static int cf_file_open(CONF_SECTION *cs, char const *filename, bool from_dir, F
  */
 void cf_file_check_set_uid_gid(uid_t uid, gid_t gid)
 {
-	if (uid != 0) conf_check_uid = uid;
-	if (gid != 0) conf_check_gid = gid;
+	if (uid != (uid_t) -1) conf_check_uid = uid;
+	if (gid != (gid_t) -1) conf_check_gid = gid;
 }
 
 /** Perform an operation with the effect/group set to conf_check_gid and conf_check_uid
@@ -688,17 +701,17 @@ cf_file_check_err_t cf_file_check_effective(char const *filename,
 {
 	int ret;
 
-	uid_t euid = (uid_t)-1;
-	gid_t egid = (gid_t)-1;
+	uid_t euid = (uid_t) -1;
+	gid_t egid = (gid_t) -1;
 
-	if ((conf_check_gid != (gid_t)-1) && ((egid = getegid()) != conf_check_gid)) {
+	if ((conf_check_gid != (gid_t) -1) && ((egid = getegid()) != conf_check_gid)) {
 		if (setegid(conf_check_gid) < 0) {
 			fr_strerror_printf("Failed setting effective group ID (%d) for file check: %s",
 					   (int) conf_check_gid, fr_syserror(errno));
 			return CF_FILE_OTHER_ERROR;
 		}
 	}
-	if ((conf_check_uid != (uid_t)-1) && ((euid = geteuid()) != conf_check_uid)) {
+	if ((conf_check_uid != (uid_t) -1) && ((euid = geteuid()) != conf_check_uid)) {
 		if (seteuid(conf_check_uid) < 0) {
 			fr_strerror_printf("Failed setting effective user ID (%d) for file check: %s",
 					   (int) conf_check_uid, fr_syserror(errno));
@@ -914,10 +927,10 @@ cf_file_check_err_t cf_file_check(CONF_PAIR *cp, bool check_perms)
 
 	top = cf_root(cp);
 	tree = cf_data_value(cf_data_find(top, fr_rb_tree_t, "filename"));
-	if (!tree) return false;
+	if (!tree) return CF_FILE_OTHER_ERROR;
 
 	file = talloc(tree, cf_file_t);
-	if (!file) return false;
+	if (!file) return CF_FILE_OTHER_ERROR;
 
 	file->filename = talloc_strdup(file, filename);	/* The rest of the code expects this to be talloced */
 	file->cs = cf_item_to_section(cf_parent(cp));
@@ -1235,7 +1248,7 @@ static int process_include(cf_stack_t *stack, CONF_SECTION *parent, char const *
 	 */
 	{
 		char		*directory;
-		DIR		*dir;
+		DIR		*dir = NULL;
 		struct dirent	*dp;
 		struct stat	stat_buf;
 		cf_file_heap_t	*h;
@@ -1257,6 +1270,7 @@ static int process_include(cf_stack_t *stack, CONF_SECTION *parent, char const *
 			      frame->filename, frame->lineno, value,
 			      fr_syserror(errno));
 		error:
+			if (dir) closedir(dir);
 			talloc_free(directory);
 			return -1;
 		}
@@ -1317,8 +1331,8 @@ static int process_include(cf_stack_t *stack, CONF_SECTION *parent, char const *
 			 *	Check for valid characters
 			 */
 			for (p = dp->d_name; *p != '\0'; p++) {
-				if (isalpha((uint8_t)*p) ||
-				    isdigit((uint8_t)*p) ||
+				if (isalpha((uint8_t) *p) ||
+				    isdigit((uint8_t) *p) ||
 				    (*p == '-') ||
 				    (*p == '_') ||
 				    (*p == '.')) continue;
@@ -1336,8 +1350,8 @@ static int process_include(cf_stack_t *stack, CONF_SECTION *parent, char const *
 			 	continue;
 			}
 			if ((len > 9) && (strncmp(&dp->d_name[len - 9], ".dpkg-old", 9) == 0)) goto pkg_file;
-			if ((len > 7) && (strncmp(&dp->d_name[len - 7], ".rpmnew", 9) == 0)) goto pkg_file;
-			if ((len > 8) && (strncmp(&dp->d_name[len - 8], ".rpmsave", 10) == 0)) goto pkg_file;
+			if ((len > 7) && (strncmp(&dp->d_name[len - 7], ".rpmnew", 7) == 0)) goto pkg_file;
+			if ((len > 8) && (strncmp(&dp->d_name[len - 8], ".rpmsave", 8) == 0)) goto pkg_file;
 
 			snprintf(stack->buff[1], stack->bufsize, "%s%s",
 				 frame->directory, dp->d_name);
@@ -1361,6 +1375,7 @@ static int process_include(cf_stack_t *stack, CONF_SECTION *parent, char const *
 			h->heap_id = FR_HEAP_INDEX_INVALID;
 			(void) fr_heap_insert(&frame->heap, h);
 		}
+
 		closedir(dir);
 		return 1;
 	}
@@ -1869,9 +1884,10 @@ static CONF_ITEM *process_catch(cf_stack_t *stack)
 			continue;
 		}
 
-		if (argc > RLM_MODULE_NUMCODES) {
+		if (argc >= RLM_MODULE_NUMCODES) {
 			ERROR("%s[%d]: Invalid syntax for 'catch' - too many arguments at'%s'",
 			      frame->filename, frame->lineno, ptr);
+			talloc_free(name2);
 			return NULL;
 		}
 
@@ -2622,15 +2638,49 @@ check_for_eol:
 		}
 
 		name2_token = gettoken(&ptr, buff[2], stack->bufsize, false); /* can't be EOL */
-		if (name1_token == T_INVALID) {
+		if (name2_token == T_INVALID) {
 			return parse_error(stack, ptr2, fr_strerror());
 		}
 
-		if (name1_token != T_BARE_WORD) {
+		if (name2_token != T_BARE_WORD) {
 			return parse_error(stack, ptr2, "Unexpected quoted string after section name");
 		}
 
 		fr_skip_whitespace(ptr);
+
+		/*
+		 *	load-balance and redundant-load-balance MUST have a static module name, and MAY have
+		 *	an additional load-balance keyword.
+		 */
+		if ((parent->unlang == CF_UNLANG_MODULES) && (*ptr != '{') &&
+		    ((strcmp(buff[1], "load-balance") == 0) ||
+		     (strcmp(buff[1], "redundant-load-balance") == 0))) {
+			/*
+			 *	The third name could be an attribute name, xlat expansion, etc.
+			 */
+			if (cf_get_token(parent, &ptr, &value_token, buff[3], stack->bufsize,
+					 frame->filename, frame->lineno) < 0) {
+				return -1;
+			}
+
+			fr_skip_whitespace(ptr);
+
+			if (*ptr != '{') {
+				return parse_error(stack, ptr, "Expected '{'");
+			}
+
+			ptr++;
+
+			css = cf_section_alloc(parent, parent, buff[1], buff[2]);
+			if (!css) goto oom;
+
+			css->argc = 1;
+			css->argv = talloc_array(css, char const *, 1);
+			css->argv[0] = talloc_typed_strdup(css->argv, buff[3]);
+			css->argv_quote = talloc_array(css, fr_token_t, 1);
+			css->argv_quote[0] = value_token;
+			goto setup_section;
+		}
 
 		if (*ptr != '{') {
 			return parse_error(stack, ptr, "Missing '{' for configuration section");
@@ -2799,6 +2849,7 @@ alloc_section:
 		return -1;
 	}
 
+setup_section:
 	cf_filename_set(css, frame->filename);
 	cf_lineno_set(css, frame->lineno);
 	css->name2_quote = name2_token;
@@ -3562,20 +3613,35 @@ static void cf_stack_cleanup(cf_stack_t *stack)
 /*
  *	Bootstrap a config file.
  */
-int cf_file_read(CONF_SECTION *cs, char const *filename)
+int cf_file_read(CONF_SECTION *cs, char const *filename, bool root)
 {
 	int		i;
-	char		*p;
-	CONF_PAIR	*cp;
 	fr_rb_tree_t	*tree;
 	cf_stack_t	stack;
 	cf_stack_frame_t	*frame;
 
-	cp = cf_pair_alloc(cs, "confdir", filename, T_OP_EQ, T_BARE_WORD, T_SINGLE_QUOTED_STRING);
-	if (!cp) return -1;
+	/*
+	 *	Only add the default config directory if we're loading a top-level configuration file.
+	 */
+	if (root) {
+		char	  *p;
+		CONF_PAIR *cp;
 
-	p = strrchr(cp->value, FR_DIR_SEP);
-	if (p) *p = '\0';
+		/*
+		 *	For compatibility, this goes first.  And we don't care if there are too many '/'.
+		 */
+		cp = cf_pair_alloc(cs, "raddbdir", filename, T_OP_EQ, T_BARE_WORD, T_SINGLE_QUOTED_STRING);
+		if (!cp) return -1;
+
+		/*
+		 *	This goes second, and we try to be nice about too many '/'.
+		 */
+		cp = cf_pair_alloc(cs, "confdir", filename, T_OP_EQ, T_BARE_WORD, T_SINGLE_QUOTED_STRING);
+		if (!cp) return -1;
+
+		p = strrchr(cp->value, FR_DIR_SEP);
+		if (p) *p = '\0';
+	}
 
 	MEM(tree = fr_rb_inline_talloc_alloc(cs, cf_file_t, node, _inode_cmp, NULL));
 

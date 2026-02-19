@@ -34,14 +34,7 @@
 
 extern fr_app_io_t proto_radius_tcp;
 
-typedef struct {
-	char const			*name;			//!< socket name
-	int				sockfd;
-
-	fr_io_address_t			*connection;		//!< for connected sockets.
-
-	fr_stats_t			stats;			//!< statistics for this socket
-} proto_radius_tcp_thread_t;
+typedef struct proto_radius_io_thread_s proto_radius_tcp_thread_t;
 
 typedef struct {
 	CONF_SECTION			*cs;			//!< our configuration
@@ -152,7 +145,8 @@ static ssize_t mod_read(fr_listen_t *li, UNUSED void **packet_ctx, fr_time_t *re
 			break;
 		}
 
-		PDEBUG2("proto_radius_tcp got read error (%zd) - %s", data_size, fr_syserror(errno));
+		proto_radius_log(li, FR_RADIUS_FAIL_IO_ERROR, NULL,
+				 "%s", fr_strerror());
 		return data_size;
 	}
 
@@ -166,7 +160,8 @@ static ssize_t mod_read(fr_listen_t *li, UNUSED void **packet_ctx, fr_time_t *re
 	 *	TCP read of zero means the socket is dead.
 	 */
 	if (!data_size) {
-		DEBUG2("proto_radius_tcp - other side closed the socket.");
+		proto_radius_log(li, FR_RADIUS_FAIL_IO_ERROR, NULL,
+				 "Client closed the connection");
 		return -1;
 	}
 
@@ -175,7 +170,8 @@ have_packet:
 	 *	We MUST always start with a known RADIUS packet.
 	 */
 	if ((buffer[0] == 0) || (buffer[0] >= FR_RADIUS_CODE_MAX)) {
-		DEBUG("proto_radius_tcp got invalid packet code %d", buffer[0]);
+		proto_radius_log(li, FR_RADIUS_FAIL_UNKNOWN_PACKET_CODE, NULL,
+				 "Received packet code %u", buffer[0]);
 		thread->stats.total_unknown_types++;
 		return -1;
 	}
@@ -214,10 +210,7 @@ have_packet:
 	 *      If it's not a RADIUS packet, ignore it.
 	 */
 	if (!fr_radius_ok(buffer, &packet_len, inst->max_attributes, false, &reason)) {
-		/*
-		 *      @todo - check for F5 load balancer packets.  <sigh>
-		 */
-		DEBUG2("proto_radius_tcp got a packet which isn't RADIUS");
+		proto_radius_log(li, reason, NULL, "Received invalid packet");
 		thread->stats.total_malformed_requests++;
 		return -1;
 	}
@@ -347,7 +340,7 @@ static int mod_open(fr_listen_t *li)
 
 	li->fd = sockfd = fr_socket_server_tcp(&inst->ipaddr, &port, inst->port_name, true);
 	if (sockfd < 0) {
-		PERROR("Failed opening TCP socket");
+		cf_log_err(li->cs, "Failed opening TCP socket - %s", fr_strerror());
 	error:
 		return -1;
 	}
@@ -356,13 +349,14 @@ static int mod_open(fr_listen_t *li)
 
 	if (fr_socket_bind(sockfd, inst->interface, &ipaddr, &port) < 0) {
 		close(sockfd);
-		PERROR("Failed binding socket");
+		cf_log_err(li->cs, "Failed binding to socket - %s", fr_strerror());
+		cf_log_err(li->cs, DOC_ROOT_REF(troubleshooting/network/bind));
 		goto error;
 	}
 
 	if (listen(sockfd, 8) < 0) {
 		close(sockfd);
-		PERROR("Failed listening on socket");
+		cf_log_err(li->cs, "Failed listening on socket - %s", fr_syserror(errno));
 		goto error;
 	}
 

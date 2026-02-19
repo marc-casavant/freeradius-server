@@ -58,6 +58,25 @@ typedef struct {
 	fr_dict_t const			*dict;		//!< Restrict xlat to this namespace
 } xlat_pair_decode_uctx_t;
 
+/** Copy an argument from the input list to the output cursor.
+ *
+ *  For now we just move it.  This utility function will let us have
+ *  value-box cursors as input arguments.
+ *
+ * @param[in] ctx	talloc ctx
+ * @param[out] out	where the value-box will be stored
+ * @param[in] in	input value-box list
+ * @param[in] vb		the argument to copy
+ */
+void xlat_arg_copy_out(TALLOC_CTX *ctx, fr_dcursor_t *out, fr_value_box_list_t *in, fr_value_box_t *vb)
+{
+	fr_value_box_list_remove(in, vb);
+	if (talloc_parent(vb) != ctx) {
+		(void) talloc_steal(ctx, vb);
+	}
+	fr_dcursor_append(out, vb);
+}
+
 /*
  *	Regular xlat functions
  */
@@ -109,41 +128,60 @@ done:
 }
 
 
+static void xlat_debug_attr_vp(request_t *request, fr_pair_t const *vp,
+			       fr_dict_attr_t const *da);
+
+static void xlat_debug_attr_list(request_t *request, fr_pair_list_t const *list,
+				 fr_dict_attr_t const *parent)
+{
+	fr_pair_t *vp;
+
+	for (vp = fr_pair_list_next(list, NULL);
+	     vp != NULL;
+	     vp = fr_pair_list_next(list, vp)) {
+		xlat_debug_attr_vp(request, vp, parent);
+	}
+}
+
+
 static xlat_arg_parser_t const xlat_pair_cursor_args[] = {
 	XLAT_ARG_PARSER_CURSOR,
 	XLAT_ARG_PARSER_TERMINATOR
 };
 
-void xlat_debug_attr_vp(request_t *request, fr_pair_t *vp, tmpl_t const *vpt)
+static void xlat_debug_attr_vp(request_t *request, fr_pair_t const *vp,
+			       fr_dict_attr_t const *parent)
 {
 	fr_dict_vendor_t const		*vendor;
 	fr_table_num_ordered_t const	*type;
 	size_t				i;
+	ssize_t				slen;
+	fr_sbuff_t			sbuff;
+	char				buffer[1024];
+
+	sbuff = FR_SBUFF_OUT(buffer, sizeof(buffer));
+
+	/*
+	 *	Squash the names down if necessary.
+	 */
+	if (!RDEBUG_ENABLED3) {
+		slen = fr_pair_print_name(&sbuff, parent, &vp);
+	} else {
+		slen = fr_sbuff_in_sprintf(&sbuff, "%s %s ", vp->da->name, fr_tokens[vp->op]);
+	}
+	if (slen <= 0) return;
 
 	switch (vp->vp_type) {
 	case FR_TYPE_STRUCTURAL:
-		if (vpt) {
-			RIDEBUG2("%s.%s = {",
-				 tmpl_list_name(tmpl_list(vpt), "<INVALID>"),
-				 vp->da->name);
-		} else {
-			RIDEBUG2("%s = {", vp->da->name);
-		}
+		RIDEBUG2("%s{", buffer);
 		RINDENT();
-		xlat_debug_attr_list(request, &vp->vp_group);
+		xlat_debug_attr_list(request, &vp->vp_group, vp->da);
 		REXDENT();
 		RIDEBUG2("}");
 		break;
 
 	default:
-		if (vpt) {
-			RIDEBUG2("%s.%s = %pV",
-				 tmpl_list_name(tmpl_list(vpt), "<INVALID>"),
-				 vp->da->name,
-				 &vp->data);
-		} else {
-			RIDEBUG2("%s = %pV", vp->da->name, &vp->data);
-		}
+		RIDEBUG2("%s%pV", buffer, &vp->data);
 	}
 
 	if (!RDEBUG_ENABLED3) return;
@@ -193,9 +231,10 @@ void xlat_debug_attr_vp(request_t *request, fr_pair_t *vp, tmpl_t const *vpt)
 		 */
 		if (!fr_type_is_leaf(type->value) || !fr_type_is_leaf(vp->vp_type)) goto next_type;
 
-		MEM(dst = fr_value_box_alloc_null(vp));
+		MEM(dst = fr_value_box_acopy(NULL, &vp->data));
+
 		/* We expect some to fail */
-		if (fr_value_box_cast(dst, dst, type->value, NULL, &vp->data) < 0) {
+		if (fr_value_box_cast_in_place(dst, dst, type->value, NULL) < 0) {
 			goto next_type;
 		}
 
@@ -212,31 +251,19 @@ void xlat_debug_attr_vp(request_t *request, fr_pair_t *vp, tmpl_t const *vpt)
 	REXDENT();
 }
 
-void xlat_debug_attr_list(request_t *request, fr_pair_list_t const *list)
-{
-	fr_pair_t *vp;
-
-	for (vp = fr_pair_list_next(list, NULL);
-	     vp != NULL;
-	     vp = fr_pair_list_next(list, vp)) {
-		xlat_debug_attr_vp(request, vp, NULL);
-	}
-}
-
 /** Common function to move boxes from input list to output list
  *
  * This can be used to implement safe_for functions, as the xlat framework
  * can be used for concatenation, casting, and marking up output boxes as
  * safe_for.
  */
-xlat_action_t xlat_transparent(UNUSED TALLOC_CTX *ctx, fr_dcursor_t *out,
+xlat_action_t xlat_transparent(TALLOC_CTX *ctx, fr_dcursor_t *out,
 			       UNUSED xlat_ctx_t const *xctx,
 			       UNUSED request_t *request, fr_value_box_list_t *args)
 {
-	fr_value_box_list_foreach_safe(args, vb) {
-		fr_value_box_list_remove(args, vb);
-		fr_dcursor_append(out, vb);
-	}}
+	fr_value_box_list_foreach(args, vb) {
+		xlat_arg_copy_out(ctx, out, args, vb);
+	}
 
 	return XLAT_ACTION_DONE;
 }
@@ -278,7 +305,7 @@ static xlat_action_t xlat_func_pairs_debug(UNUSED TALLOC_CTX *ctx, UNUSED fr_dcu
 	for (vp = fr_dcursor_current(cursor);
 	     vp;
 	     vp = fr_dcursor_next(cursor)) {
-		xlat_debug_attr_vp(request, vp, NULL); /* @todo - pass in vpt, too, via the vb_cursor stuff */
+		xlat_debug_attr_vp(request, vp, NULL);
 	}
 	REXDENT();
 
@@ -605,7 +632,7 @@ static xlat_action_t xlat_func_file_tail(TALLOC_CTX *ctx, fr_dcursor_t *out,
 			stop = 1;
 
 		} else if (num->vb_uint32 <= 16) {
-			stop = num->vb_uint64;
+			stop = num->vb_uint32;
 
 		} else {
 			stop = 16;
@@ -764,6 +791,12 @@ static xlat_action_t xlat_func_file_cat(TALLOC_CTX *ctx, fr_dcursor_t *out,
 	}
 	close(fd);
 
+	if (len < buf.st_size) {
+		RPERROR("Failed reading all of file %s", filename);
+		talloc_free(dst);
+		goto fail;
+	}
+
 	fr_dcursor_append(out, dst);
 
 	return XLAT_ACTION_DONE;
@@ -805,14 +838,57 @@ static xlat_action_t xlat_func_file_touch(TALLOC_CTX *ctx, fr_dcursor_t *out, UN
 	MEM(dst = fr_value_box_alloc(ctx, FR_TYPE_BOOL, NULL));
 	fr_dcursor_append(out, dst);
 
-	fd = open(filename, O_CREAT | S_IRUSR | S_IWUSR, 0600);
-	if (fd == -1) {
+	fd = open(filename, O_CREAT | O_WRONLY, 0600);
+	if (fd < 0) {
 		dst->vb_bool = false;
 		REDEBUG3("Failed touching file %s - %s", filename, fr_syserror(errno));
+		return XLAT_ACTION_DONE;
 	}
 	dst->vb_bool = true;
 
 	close(fd);
+
+	return XLAT_ACTION_DONE;
+}
+
+static xlat_action_t xlat_func_file_mkdir(TALLOC_CTX *ctx, fr_dcursor_t *out, UNUSED xlat_ctx_t const *xctx,
+					  request_t *request, fr_value_box_list_t *args)
+{
+	fr_value_box_t *dst, *vb;
+	char const	*dirname;
+
+	XLAT_ARGS(args, &vb);
+	fr_assert(vb->type == FR_TYPE_STRING);
+	dirname = vb->vb_strvalue;
+
+	MEM(dst = fr_value_box_alloc(ctx, FR_TYPE_BOOL, NULL));
+	fr_dcursor_append(out, dst);
+
+	dst->vb_bool = (fr_mkdir(NULL, dirname, -1, 0700, NULL, NULL) == 0);
+	if (!dst->vb_bool) {
+		REDEBUG3("Failed creating directory %s - %s", dirname, fr_syserror(errno));
+	}
+
+	return XLAT_ACTION_DONE;
+}
+
+static xlat_action_t xlat_func_file_rmdir(TALLOC_CTX *ctx, fr_dcursor_t *out, UNUSED xlat_ctx_t const *xctx,
+					  request_t *request, fr_value_box_list_t *args)
+{
+	fr_value_box_t *dst, *vb;
+	char const	*dirname;
+
+	XLAT_ARGS(args, &vb);
+	fr_assert(vb->type == FR_TYPE_STRING);
+	dirname = vb->vb_strvalue;
+
+	MEM(dst = fr_value_box_alloc(ctx, FR_TYPE_BOOL, NULL));
+	fr_dcursor_append(out, dst);
+
+	dst->vb_bool = (rmdir(dirname) == 0);
+	if (!dst->vb_bool) {
+		REDEBUG3("Failed removing directory %s - %s", dirname, fr_syserror(errno));
+	}
 
 	return XLAT_ACTION_DONE;
 }
@@ -1020,7 +1096,7 @@ static xlat_action_t xlat_func_integer(TALLOC_CTX *ctx, fr_dcursor_t *out,
 	switch (in_vb->type) {
 	default:
 	error:
-		RPEDEBUG("Failed converting %pV (%s) to an integer", in_vb,
+		RPEDEBUG("Failed converting %pR (%s) to an integer", in_vb,
 			 fr_type_to_str(in_vb->type));
 		talloc_free(in_vb);
 		return XLAT_ACTION_FAIL;
@@ -1338,7 +1414,7 @@ static xlat_action_t xlat_func_map(TALLOC_CTX *ctx, fr_dcursor_t *out,
 	vb->vb_bool = false;	/* Default fail value - changed to true on success */
 	fr_dcursor_append(out, vb);
 
-	fr_value_box_list_foreach_safe(&fmt_vb->vb_group, fmt) {
+	fr_value_box_list_foreach(&fmt_vb->vb_group, fmt) {
 		if (map_afrom_attr_str(request, &map, fmt->vb_strvalue, &attr_rules, &attr_rules) < 0) {
 			RPEDEBUG("Failed parsing \"%s\" as map", fmt_vb->vb_strvalue);
 			return XLAT_ACTION_FAIL;
@@ -1375,7 +1451,7 @@ static xlat_action_t xlat_func_map(TALLOC_CTX *ctx, fr_dcursor_t *out,
 		REXDENT();
 		talloc_free(map);
 		if (ret < 0) return XLAT_ACTION_FAIL;
-	}}
+	}
 
 	vb->vb_bool = true;
 	return XLAT_ACTION_DONE;
@@ -1402,7 +1478,7 @@ static xlat_action_t xlat_func_next_time(TALLOC_CTX *ctx, fr_dcursor_t *out,
 					 UNUSED xlat_ctx_t const *xctx,
 					 request_t *request, fr_value_box_list_t *args)
 {
-	long		num;
+	unsigned long  	num;
 
 	char const	*p;
 	char		*q;
@@ -1422,8 +1498,12 @@ static xlat_action_t xlat_func_next_time(TALLOC_CTX *ctx, fr_dcursor_t *out,
 	p = in_head->vb_strvalue;
 
 	num = strtoul(p, &q, 10);
-	if (!q || *q == '\0') {
+	if ((num == ULONG_MAX) || !q || *q == '\0') {
 		REDEBUG("<int> must be followed by time period (h|d|w|m|y)");
+		return XLAT_ACTION_FAIL;
+	}
+	if (num == 0) {
+		REDEBUG("<int> must be greater than zero");
 		return XLAT_ACTION_FAIL;
 	}
 
@@ -1850,8 +1930,7 @@ static xlat_action_t xlat_func_base64_decode(TALLOC_CTX *ctx, fr_dcursor_t *out,
 	 *	FR_BASE64_DEC_LENGTH produces 2 for empty strings...
 	 */
 	if (in->vb_length == 0) {
-		fr_value_box_list_remove(args, in);
-		fr_dcursor_append(out, in);
+		xlat_arg_copy_out(ctx, out, args, in);
 		return XLAT_ACTION_DONE;
 	}
 
@@ -1942,6 +2021,45 @@ static xlat_action_t xlat_func_bin(TALLOC_CTX *ctx, fr_dcursor_t *out,
 		fr_value_box_safety_copy_changed(result, hex);
 		fr_dcursor_append(out, result);
 	}
+
+	return XLAT_ACTION_DONE;
+}
+
+static xlat_arg_parser_t const xlat_func_block_args[] = {
+	{ .required = true, .single = true, .type = FR_TYPE_TIME_DELTA },
+	XLAT_ARG_PARSER_TERMINATOR
+};
+
+/** Block for the specified duration
+ *
+ * This is for developer use only to simulate blocking, synchronous I/O.
+ * For normal use, use the %delay() xlat instead.
+ *
+ * Example:
+@verbatim
+%block(1s)
+@endverbatim
+ *
+ * @ingroup xlat_functions
+ */
+static xlat_action_t xlat_func_block(TALLOC_CTX *ctx, fr_dcursor_t *out,
+				     UNUSED xlat_ctx_t const *xctx,
+				     UNUSED request_t *request, fr_value_box_list_t *args)
+{
+	fr_value_box_t		*delay;
+	fr_value_box_t		*vb;
+	struct timespec		ts_in, ts_remain = {};
+
+	XLAT_ARGS(args, &delay);
+
+	ts_in = fr_time_delta_to_timespec(delay->vb_time_delta);
+
+	(void)nanosleep(&ts_in, &ts_remain);
+
+	MEM(vb = fr_value_box_alloc(ctx, FR_TYPE_TIME_DELTA, NULL));
+	vb->vb_time_delta = fr_time_delta_sub(delay->vb_time_delta,
+					      fr_time_delta_from_timespec(&ts_remain));
+	fr_dcursor_append(out, vb);
 
 	return XLAT_ACTION_DONE;
 }
@@ -2262,17 +2380,16 @@ static xlat_arg_parser_t const xlat_func_join_args[] = {
  *
  * null boxes are not preserved.
  */
-static xlat_action_t xlat_func_join(UNUSED TALLOC_CTX *ctx, fr_dcursor_t *out,
+static xlat_action_t xlat_func_join(TALLOC_CTX *ctx, fr_dcursor_t *out,
 				    UNUSED xlat_ctx_t const *xctx,
 				    UNUSED request_t *request, fr_value_box_list_t *in)
 {
 	fr_value_box_list_foreach(in, arg) {
 		fr_assert(arg->type == FR_TYPE_GROUP);
 
-		fr_value_box_list_foreach_safe(&arg->vb_group, vb) {
-			fr_value_box_list_remove(&arg->vb_group, vb);
-			fr_dcursor_append(out, vb);
-		}}
+		fr_value_box_list_foreach(&arg->vb_group, vb) {
+			xlat_arg_copy_out(ctx, out, &arg->vb_group, vb);
+		}
 	}
 	return XLAT_ACTION_DONE;
 }
@@ -2801,7 +2918,10 @@ static xlat_action_t xlat_func_uuid_v4(TALLOC_CTX *ctx, fr_dcursor_t *out, UNUSE
 	uuid_set_version(vals, 4);
 	uuid_set_variant(vals, 1);
 
-	if (uuid_print_vb(vb, vals) < 0) return XLAT_ACTION_FAIL;
+	if (uuid_print_vb(vb, vals) < 0) {
+		talloc_free(vb);
+		return XLAT_ACTION_FAIL;
+	}
 
 	fr_dcursor_append(out, vb);
 	return XLAT_ACTION_DONE;
@@ -3827,9 +3947,6 @@ static xlat_action_t xlat_func_time(TALLOC_CTX *ctx, fr_dcursor_t *out,
 
 		MEM(vb = fr_value_box_alloc(ctx, FR_TYPE_TIME_DELTA, NULL));
 		vb->vb_time_delta = fr_time_delta_wrap(nsec);
-
-		MEM(vb = fr_value_box_alloc(ctx, FR_TYPE_TIME_DELTA, NULL));
-		vb->vb_time_delta = fr_time_delta_wrap(nsec);
 		goto append;
 
 	} else if (fr_unix_time_from_str(&value, arg->vb_strvalue, FR_TIME_RES_SEC) < 0) {
@@ -3951,8 +4068,8 @@ static xlat_action_t xlat_func_time_is_dst(TALLOC_CTX *ctx, fr_dcursor_t *out,
  *
  * If upper is true, change to uppercase, otherwise, change to lowercase
  */
-static xlat_action_t xlat_change_case(UNUSED TALLOC_CTX *ctx, fr_dcursor_t *out,
-				       UNUSED request_t *request, fr_value_box_list_t *args, bool upper)
+static xlat_action_t xlat_change_case(TALLOC_CTX *ctx, fr_dcursor_t *out,
+				      UNUSED request_t *request, fr_value_box_list_t *args, bool upper)
 {
 	char		*p;
 	char const	*end;
@@ -3968,8 +4085,7 @@ static xlat_action_t xlat_change_case(UNUSED TALLOC_CTX *ctx, fr_dcursor_t *out,
 		p++;
 	}
 
-	fr_value_box_list_remove(args, vb);	/* Can't leave it in both lists */
-	fr_dcursor_append(out, vb);
+	xlat_arg_copy_out(ctx, out, args, vb);
 
 	return XLAT_ACTION_DONE;
 }
@@ -4684,6 +4800,7 @@ do { \
 	xlat_func_flags_set(xlat, XLAT_FUNC_FLAG_INTERNAL); \
 } while (0)
 
+	XLAT_REGISTER_ARGS("block", xlat_func_block, FR_TYPE_TIME_DELTA, xlat_func_block_args);
 	XLAT_REGISTER_ARGS("debug", xlat_func_debug, FR_TYPE_INT8, xlat_func_debug_args);
 	XLAT_REGISTER_ARGS("debug_attr", xlat_func_pairs_debug, FR_TYPE_NULL, xlat_pair_cursor_args);
 	XLAT_NEW("pairs.debug");
@@ -4695,6 +4812,8 @@ do { \
 	XLAT_REGISTER_ARGS("file.size", xlat_func_file_size, FR_TYPE_UINT64, xlat_func_file_name_args);
 	XLAT_REGISTER_ARGS("file.tail", xlat_func_file_tail, FR_TYPE_STRING, xlat_func_file_name_count_args);
 	XLAT_REGISTER_ARGS("file.cat", xlat_func_file_cat, FR_TYPE_OCTETS, xlat_func_file_cat_args);
+	XLAT_REGISTER_ARGS("file.mkdir", xlat_func_file_mkdir, FR_TYPE_BOOL, xlat_func_file_name_args);
+	XLAT_REGISTER_ARGS("file.rmdir", xlat_func_file_rmdir, FR_TYPE_BOOL, xlat_func_file_name_args);
 
 	XLAT_REGISTER_ARGS("immutable", xlat_func_immutable_attr, FR_TYPE_NULL, xlat_pair_cursor_args);
 	XLAT_NEW("pairs.immutable");

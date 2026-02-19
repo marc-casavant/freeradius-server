@@ -17,7 +17,7 @@ then cannot use ANY other authentication method.
 
 
 
-## Configuration Settings
+== Configuration Settings
 
 
 require_identity_realm:: Require the the EAP Identity provided contains
@@ -39,6 +39,13 @@ key off the NAI realm to validate the certificate we (the EAP server) present.
 If you do not require an NAI realm be present in the EAP identity string,
 your users will not be able to take advantage of this added security when
 it is enabled by OS and device vendors.
+
+
+
+Session tracking has moved to the `session` section of a virtual server.
+  * timer_expire --> timeout
+  * max_sessions --> max
+  * dedup_key    --> dedup_key
 
 
 
@@ -77,6 +84,11 @@ request will still end up being rejected.
 
 type:: Only EAP types listed below with a `type = <EAP-Type>` pair will be allowed.
 
+In addition, setting `type = md5` will load the configuration section `md5 { ... }`.
+There is no need to "comment out" the entire configuration section for EAP types
+which are not used.  Instead, simply comment out or delete the `type = ..` entry
+for that EAP method, and the entire configuration section will be ignored.
+
 If the `control.EAP-Type` attribute is set, then that is used to form the list of
 allowed EAP types, with the first instance being the default type and others also
 being allowed.
@@ -92,7 +104,6 @@ available.
 WARNING: EAP-MD5 authentication cannot be used for wireless
 connections.  It is insecure, and does not provide for dynamic WEP
 keys or WPA enterprise.
-
 
 
 
@@ -138,18 +149,18 @@ the authentication itself.
 
 ## Common TLS configuration for TLS-based EAP types
 
-See `raddb/certs/index.adoc` for additional comments on certificates.
+See `certs/index.adoc` for additional comments on certificates.
 
 If OpenSSL was not found at the time the server was built, the `tls`,
 `ttls`, and `peap` sections will be ignored.
 
 If you do not currently have certificates signed by a trusted CA you
 may use the 'snakeoil' certificates. Included with the server in
-`raddb/certs`.
+`certs`.
 
 If these certificates have not been auto-generated:
 
-  cd raddb/certs
+  cd _confdir_/certs
   make
 
 These test certificates *SHOULD NOT* be used in a normal
@@ -1263,11 +1274,11 @@ require configuration for each user.
 
 
 
-## Expansions
+== Expansions
 
 The rlm_eap module provides the below functions to interact with the `3GPP` and `SIM` protocols.
 
-### %3gpp_temporary_id.decrypt('...)
+=== %3gpp_temporary_id.decrypt('...)
 
 TODO
 
@@ -1286,7 +1297,7 @@ TODO
 TODO
 ```
 
-### %3gpp_temporary_id.encrypt(...)
+=== %3gpp_temporary_id.encrypt(...)
 
 TODO
 
@@ -1305,7 +1316,7 @@ TODO
 TODO
 ```
 
-### %3gpp_temporary_id.key_index(...)
+=== %3gpp_temporary_id.key_index(...)
 
 TODO
 
@@ -1324,7 +1335,7 @@ TODO
 TODO
 ```
 
-### %aka_sim_id_method(...)
+=== %aka_sim_id_method(...)
 
 TODO
 
@@ -1343,7 +1354,7 @@ TODO
 TODO
 ```
 
-### %aka_sim_id_type(...)
+=== %aka_sim_id_type(...)
 
 TODO
 
@@ -1381,11 +1392,11 @@ eap {
 #	type = sim
 	md5 {
 	}
-#	pwd {
-#		group = 19
-#		server_id = theserver@example.com
-#		fragment_size = 1020
-#	}
+	pwd {
+		group = 19
+		server_id = theserver@example.com
+		fragment_size = 1020
+	}
 	gtc {
 #		challenge = "Password: "
 		auth_type = PAP
@@ -1482,5 +1493,5 @@ eap {
 }
 ```
 
-// Copyright (C) 2025 Network RADIUS SAS.  Licenced under CC-by-NC 4.0.
+// Copyright (C) 2026 Network RADIUS SAS.  Licenced under CC-by-NC 4.0.
 // This documentation was developed by Network RADIUS SAS.

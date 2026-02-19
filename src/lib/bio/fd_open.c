@@ -731,37 +731,60 @@ static int fr_bio_fd_socket_bind_to_device(fr_bio_fd_t *my, UNUSED fr_bio_fd_con
 
 static int fr_bio_fd_socket_bind(fr_bio_fd_t *my, fr_bio_fd_config_t const *cfg)
 {
+	bool do_suid;
 	socklen_t salen;
 	struct sockaddr_storage	salocal;
 
 	fr_assert((my->info.socket.af == AF_INET) || (my->info.socket.af == AF_INET6));
 
+	/*
+	 *	Ranges must be a high value.
+	 */
+	if (my->info.cfg->src_port_start && (my->info.cfg->src_port_start < 1024)) {
+		fr_strerror_const("Cannot set src_port_start in the range 1..1023");
+		return -1;
+	}
+
+	/*
+	 *	Source port is in the restricted range, and we're not root, update permissions / capabilities
+	 *	so that the bind is permitted.
+	 */
+	do_suid = (my->info.socket.inet.src_port > 0) && (my->info.socket.inet.src_port < 1024) && (geteuid() != 0);
+
 #ifdef HAVE_CAPABILITY_H
 	/*
-	 *	If we're binding to a special port as non-root, then
-	 *	check capabilities.  If we're root, we already have
-	 *	equivalent capabilities so we don't need to check.
+	 *	If we can set the capabilities, then we don't need to do SUID.
 	 */
-	if ((my->info.socket.inet.src_port < 1024) && (geteuid() != 0)) {
-		(void)fr_cap_enable(CAP_NET_BIND_SERVICE, CAP_EFFECTIVE);
-	}
+	if (do_suid) do_suid = (fr_cap_enable(CAP_NET_BIND_SERVICE, CAP_EFFECTIVE) < 0);
 #endif
 
-	if (fr_bio_fd_socket_bind_to_device(my, cfg) < 0) return -1;
+	/*
+	 *	SUID up before we bind to the interface.  If we can set the capabilities above, then should
+	 *	also be able to set the capabilities to bind to an interface.
+	 */
+	if (do_suid) fr_suid_up();
+
+	if (fr_bio_fd_socket_bind_to_device(my, cfg) < 0) {
+	down:
+		if (do_suid) fr_suid_down();
+		return -1;
+	}
 
 	/*
-	 *	Bind to the IP + interface.
+	 *	Get the sockaddr for bind()
 	 */
-	if (fr_ipaddr_to_sockaddr(&salocal, &salen, &my->info.socket.inet.src_ipaddr, my->info.socket.inet.src_port) < 0) return -1;
+	if (fr_ipaddr_to_sockaddr(&salocal, &salen, &my->info.socket.inet.src_ipaddr, my->info.socket.inet.src_port) < 0) goto down;
 
 	/*
-	 *	If we have a fixed source port, just use that.
+	 *	We don't have a source port range, just bind to whatever source port that we're given.
 	 */
-	if (my->info.cfg->src_port || !my->info.cfg->src_port_start) {
+	if (!my->info.cfg->src_port_start) {
 		if (bind(my->info.socket.fd, (struct sockaddr *) &salocal, salen) < 0) {
 			fr_strerror_printf("Failed binding to socket: %s", fr_syserror(errno));
-			return -1;
+			goto down;
 		}
+		if (do_suid) fr_suid_down();
+
 	} else {
 		uint16_t src_port, current, range;
 		struct sockaddr_in *sin = (struct sockaddr_in *) &salocal;
@@ -816,7 +839,7 @@ static int fr_bio_fd_socket_bind(fr_bio_fd_t *my, fr_bio_fd_config_t const *cfg)
 	}
 
 	/*
-	 *	The source IP may have changed, so get the new one.
+	 *	The IP and/or port may have changed, so get the new one.
 	 */
 done:
 	return fr_bio_fd_socket_name(my);

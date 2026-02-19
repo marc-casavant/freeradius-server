@@ -242,7 +242,7 @@ int main(int argc, char *argv[])
 	main_config_t		*config = NULL;
 	bool			talloc_memory_report = false;
 
-	bool			raddb_dir_set = false;
+	bool			confdir_set = false;
 
 	size_t			pool_size = 0;
 	void			*pool_page_start = NULL;
@@ -359,8 +359,8 @@ int main(int argc, char *argv[])
 			break;
 
 		case 'd':
-			main_config_raddb_dir_set(config, optarg);
-			raddb_dir_set = true;
+			main_config_confdir_set(config, optarg);
+			confdir_set = true;
 			break;
 
 		case 'D':
@@ -474,10 +474,10 @@ int main(int argc, char *argv[])
 	 *	configuration directory without changing the scripts
 	 *	being executed.
 	 */
-	if (!raddb_dir_set) {
-		char const *raddb_dir = getenv("FREERADIUS_CONFIG_DIR");
+	if (!confdir_set) {
+		char const *confdir = getenv("FREERADIUS_CONFIG_DIR");
 
-		if (raddb_dir) main_config_raddb_dir_set(config, raddb_dir);
+		if (confdir) main_config_confdir_set(config, confdir);
 	}
 
 	/*
@@ -822,7 +822,7 @@ do { \
 	 */
 	if (unlang_global_init() < 0) EXIT_WITH_FAILURE;
 
-	if (server_init(config->root_cs, config->raddb_dir, fr_dict_unconst(fr_dict_internal())) < 0) EXIT_WITH_FAILURE;
+	if (server_init(config->root_cs, config->confdir, fr_dict_unconst(fr_dict_internal())) < 0) EXIT_WITH_FAILURE;
 
 	/*
 	 *  Everything seems to have loaded OK, exit gracefully.
@@ -1212,7 +1212,7 @@ static NEVER_RETURNS void usage(int status)
 	fprintf(output, "Usage: %s [options]\n", program);
 	fprintf(output, "Options:\n");
 	fprintf(output, "  -C            Check configuration and exit.\n");
-	fprintf(stderr, "  -d <raddb>    Set configuration directory (defaults to " RADDBDIR ").\n");
+	fprintf(stderr, "  -d <confdir>  Configuration file directory (defaults to " CONFDIR ").\n");
 	fprintf(stderr, "  -D <dictdir>  Set main dictionary directory (defaults to " DICTDIR ").\n");
 #ifndef NDEBUG
 	fprintf(output, "  -e <seconds>  Exit after the specified number of seconds.  Useful for diagnosing \"crash-on-exit\" issues.\n");
@@ -1223,7 +1223,7 @@ static NEVER_RETURNS void usage(int status)
 #ifndef NDEBUG
 	fprintf(output, "  -L <size>     When running in memory debug mode, set a hard limit on talloced memory\n");
 #endif
-	fprintf(output, "  -n <name>     Read raddb/name.conf instead of raddb/%s.conf.\n", program);
+	fprintf(output, "  -n <name>     Read ${confdir}/name.conf instead of ${confdir}/%s.conf.\n", program);
 	fprintf(output, "  -m            Allow multiple processes reading the same %s.conf to exist simultaneously.\n", program);
 #ifndef NDEBUG
 	fprintf(output, "  -M            Enable talloc memory debugging, and issue a memory report when the server terminates\n");

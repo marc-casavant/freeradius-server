@@ -19,7 +19,7 @@ The `Client-Shortname` attribute has been removed.  You should use `%client(shor
 === rlm_radius
 
 The `radius` module has taken over much of the functionality of
-`proxy.conf`. See `raddb/mods-available/radius` for documentation
+`proxy.conf`. See `mods-available/radius` for documentation
 and configuration examples.
 
 The `radius` module connects to one home server, just like the
@@ -27,7 +27,7 @@ The `radius` module connects to one home server, just like the
 similar to the `home_server` configuration, but not all.
 
 The module can send multiple packet types to one home server.
-e.g. Access-Request and Accounting-Request.
+e.g. Access-Request and Accounting-Request.
 
 This module also replaces the old `coa` and `originate-coa`
 configuration. See also `subrequest` for creating child requests that are
@@ -76,7 +76,7 @@ The following modules exhibit changed behaviour.
 `control.Cache-Merge` has been renamed to
 `control.Cache-Merge-New` and controls whether new entries are merged
 into the current request. It defaults to `no`. The primary use case,
-is if you’re using xlat expansions in the cache module itself to
+is if you're using xlat expansions in the cache module itself to
 retrieve information for caching, and need the result of those
 expansions to be available immediately.
 
@@ -107,7 +107,7 @@ it.
 
 The in-memory SSL cache was removed. Changes in OpenSSL and FreeRADIUS
 made it difficult to continue using the OpenSSL implementation of a
-cache. See `raddb/sites-available/tls-cache` for a better replacement.
+cache. See `sites-available/tls-cache` for a better replacement.
 The OpenSSL cache can now be placed on disk, in memory, in memcache,
 or in a redis cache. The result is both higher performance, and more
 configurable.
@@ -115,13 +115,21 @@ configurable.
 The `use_tunneled_reply` and `copy_request_to_tunnel` configuration
 items have been removed. Their functionality has been replaced with the
 `use_tunneled_reply` and `copy_request_to_tunnel` policies. See
-`raddb/sites-available/inner-tunnel` and `raddb/policy.d/eap` for
+`sites-available/inner-tunnel` and `policy.d/eap` for
 more information.
 
 These configuration items were removed because they caused issues for a
 number of users, and they made the code substantially more complicated.
 Experience shows that having configurable policies in `unlang` is
 preferable to having them hard-coded in C.
+
+Session tracking has moved to the `session` section of a virtual
+server.  See `sites-available/default`.
+
+* timer_expire --> timeout
+* max_sessions --> max
+* dedup_key    --> dedup_key
+
 
 [#rlm_eap_pwd]
 === rlm_eap_pwd
@@ -163,7 +171,7 @@ supported.
 === rlm_expiration
 
 The `expiration` module has been replaced with an `unlang` policy.
-The policy is located in `raddb/policy.d/time`.  The `Expiration`
+The policy is located in `policy.d/time`.  The `Expiration`
 attribute should continue to work the same as with v3.
 
 [#rlm_ldap]
@@ -243,8 +251,7 @@ to store session data, instead of radutmp.
 === rlm_rest
 
 `REST-HTTP-Code` is now inserted into the `request` list instead
-of the `reply.` list, to be compliant with the
-https://wiki.freeradius.org/guide/List-Usage[list usage] guidelines.
+of the `reply.` list.
 
 [#rlm_sql]
 === rlm_sql
@@ -474,3 +481,6 @@ if (%time() < (date) 'Aug 1 2023 01:02:03 UTC') {
 
 
 
+
+// Copyright (C) 2026 Network RADIUS SAS.  Licenced under CC-by-NC 4.0.
+// This documentation was developed by Network RADIUS SAS.

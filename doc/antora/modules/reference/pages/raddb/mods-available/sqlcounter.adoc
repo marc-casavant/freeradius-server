@@ -21,7 +21,7 @@ dependent on the SQL module to process `Accounting` packets.
 
 
 
-## Syntax
+== Syntax
 
 Configuration explanation.
 
@@ -104,37 +104,37 @@ to re-authenticate before they have used their allocation for the next counter p
 utc:: Use UTC for calculating the period start and end values.
 
 
-## Configuration Settings
+== Configuration Settings
 
 
 
-### Daily Counter
-
-
-
-
-
-
-### Monthly Counter
+=== Daily Counter
 
 
 
 
 
 
-### No Reset Counter
+=== Monthly Counter
 
 
 
 
 
 
-### Expire on login
+=== No Reset Counter
+
+
+
+
+
+
+=== Expire on login
 
 Set an account to expire T seconds after first login. Requires the `Expire-After`
 attribute to be set, in seconds.
 
-NOTE: You may need to edit `raddb/dictionary` to add the `Expire-After` attribute.
+NOTE: You may need to edit `dictionary` to add the `Expire-After` attribute.
 
 
 
@@ -196,5 +196,5 @@ sqlcounter expire_on_login {
 }
 ```
 
-// Copyright (C) 2025 Network RADIUS SAS.  Licenced under CC-by-NC 4.0.
+// Copyright (C) 2026 Network RADIUS SAS.  Licenced under CC-by-NC 4.0.
 // This documentation was developed by Network RADIUS SAS.

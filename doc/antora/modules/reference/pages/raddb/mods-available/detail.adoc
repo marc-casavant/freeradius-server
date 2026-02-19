@@ -13,7 +13,7 @@ NOTE: we do NOT use `link:https://freeradius.org/rfc/rfc2865.html#NAS-IP-Address
 from the originating NAS, and NOT from the proxy which actually
 sent us the request.
 
-## Configuration Settings
+== Configuration Settings
 
 
 filename:: The filename used when creating `detail` files.
@@ -35,7 +35,7 @@ e.g.:
 This will create a new `detail` file for every hour.
 
 If you are reading detail files via the `listen { ... }` section
-(e.g. as in `raddb/sites-available/robust-proxy-accounting`),
+(e.g. as in xref:reference:raddb/sites-available/robust-proxy-accounting.adoc[sites-available/robust-proxy-accounting]),
 you MUST use a unique directory for each combination of a `detail`
 file writer, and reader.
 
@@ -129,5 +129,5 @@ detail {
 }
 ```
 
-// Copyright (C) 2025 Network RADIUS SAS.  Licenced under CC-by-NC 4.0.
+// Copyright (C) 2026 Network RADIUS SAS.  Licenced under CC-by-NC 4.0.
 // This documentation was developed by Network RADIUS SAS.

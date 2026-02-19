@@ -11,14 +11,14 @@
 #  module that occurs *inside* of a tunneled method. It is used to limit
 #  the `EAP` types that can occur inside of the inner tunnel.
 #
-#  See also `raddb/sites-available/inner-tunnel`
+#  See also `sites-available/inner-tunnel`
 #
 #  See the `eap` module for full documentation on the meaning of these
 #  configuration entries.
 #
 
 #
-#  ## Configuration Settings
+#  == Configuration Settings
 #
 #  eap inner-eap { ... }::
 #
@@ -159,7 +159,7 @@ eap inner-eap {
 	#
 	#  You can create the `inner-server.pem` file by doing:
 	#
-	#       cd raddb/certs
+	#       cd _confdir_/certs
 	#       vi inner-server.cnf
 	#       make inner-server
 	#

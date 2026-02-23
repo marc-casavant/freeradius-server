@@ -3,10 +3,6 @@ linelog linelog_test_framework {
         destination = unix
         format = "bar"
 
-        # Disable message buffering
-        buffer_count = 0
-	buffer_delay = 0
-
         unix {
                 filename = /var/run/multi-server/$ENV{TEST_PROJECT_NAME}.sock
                 pool {

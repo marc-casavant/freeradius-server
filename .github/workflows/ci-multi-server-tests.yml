@@ -30,8 +30,8 @@ jobs:
     env:
       MULTI_SERVER_ENV_DOCKER_BUILD_OS: ubuntu24
       MULTI_SERVER_LOG_DIR: build/tests/multi-server/freeradius-multi-server-test-runtime-logs
-      MULTI_SERVER_TEST_RESULTS_LOG: ${MULTI_SERVER_LOG_DIR}/multi-server-test-results-combined.log
-      MULTI_SERVER_TEST_LISTENER_LOG: ${MULTI_SERVER_LOG_DIR}/multi-server-test-listener-combined.log
+      MULTI_SERVER_TEST_RESULTS_LOG: build/tests/multi-server/freeradius-multi-server-test-runtime-logs/multi-server-test-results-combined.log
+      MULTI_SERVER_TEST_LISTENER_LOG: build/tests/multi-server/freeradius-multi-server-test-runtime-logs/multi-server-test-listener-combined.log
 
     steps:
       # Checkout, but defer pulling LFS objects until we've restored the cache
@@ -187,8 +187,8 @@ jobs:
 
     env:
       MULTI_SERVER_LOG_DIR: build/tests/multi-server/freeradius-multi-server-test-runtime-logs
-      MULTI_SERVER_TEST_RESULTS_LOG: ${MULTI_SERVER_LOG_DIR}/multi-server-test-results-combined.log
-      MULTI_SERVER_TEST_LISTENER_LOG: ${MULTI_SERVER_LOG_DIR}/multi-server-test-listener-combined.log
+      MULTI_SERVER_TEST_RESULTS_LOG: build/tests/multi-server/freeradius-multi-server-test-runtime-logs/multi-server-test-results-combined.log
+      MULTI_SERVER_TEST_LISTENER_LOG: build/tests/multi-server/freeradius-multi-server-test-runtime-logs/multi-server-test-listener-combined.log
 
     container:
       image: docker.internal.networkradius.com/self-hosted

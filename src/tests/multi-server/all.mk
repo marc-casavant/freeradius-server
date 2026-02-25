@@ -37,6 +37,7 @@ multi-server-5min: test-5hs-autoaccept-5min test-1p-2hs-autoaccept-5min
 	echo "INFO: FREERADIUS_MULTI_SERVER_BUILD_DIR_PATH_ABS=$(FREERADIUS_MULTI_SERVER_BUILD_DIR_PATH_ABS)"; \
 	\
 	mkdir -p "$(FREERADIUS_MULTI_SERVER_BUILD_DIR_PATH_ABS)"; \
+	mkdir -p "$(FREERADIUS_MULTI_SERVER_TEST_RUNTIME_LOGS_DIR_ABS)"; \
 	cd $(FREERADIUS_MULTI_SERVER_BUILD_DIR_PATH_ABS); \
 	\
 	if [ ! -d freeradius-multi-server/.git ]; then \
@@ -119,6 +120,7 @@ test-5hs-autoaccept-5min: 5hs-autoaccept-env-setup
 	echo "INFO: FREERADIUS_MULTI_SERVER_BUILD_DIR_PATH_ABS=$(FREERADIUS_MULTI_SERVER_BUILD_DIR_PATH_ABS)"; \
 	\
 	mkdir -p "$(FREERADIUS_MULTI_SERVER_BUILD_DIR_PATH_ABS)"; \
+	mkdir -p "$(FREERADIUS_MULTI_SERVER_TEST_RUNTIME_LOGS_DIR_ABS)"; \
 	cd $(FREERADIUS_MULTI_SERVER_BUILD_DIR_PATH_ABS); \
 	\
 	if [ ! -d freeradius-multi-server/.git ]; then \

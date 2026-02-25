@@ -22,15 +22,16 @@ jobs:
       - run: echo "Pre-test job; checking if using self-hosted runners"
 
   # Job only runs on GitHub-hosted runners
-  test-5hs-autoaccept:
+  run-multi-server-tests:
     needs: pre-test
     runs-on: ubuntu-24.04
     if: ${{ needs.pre-test.outputs.selfhosted != '1' }}
 
     env:
       MULTI_SERVER_ENV_DOCKER_BUILD_OS: ubuntu24
-      MULTI_SERVER_TEST_LOG: build/tests/multi-server/freeradius-multi-server/multi_server_test.log
-      MULTI_SERVER_TEST_LISTENER_LOG: build/tests/multi-server/freeradius-listener-logs/custom_test-env-5hs-autoaccept.txt.bak
+      MULTI_SERVER_LOG_DIR: build/tests/multi-server/freeradius-multi-server-test-runtime-logs
+      MULTI_SERVER_TEST_RESULTS_LOG: ${MULTI_SERVER_LOG_DIR}/multi-server-test-results-combined.log
+      MULTI_SERVER_TEST_LISTENER_LOG: ${MULTI_SERVER_LOG_DIR}/multi-server-test-listener-combined.log
 
     steps:
       # Checkout, but defer pulling LFS objects until we've restored the cache
@@ -90,6 +91,7 @@ jobs:
             echo "Error: freeradius-build:latest Docker image not found and required for multi-server test environment."
             exit 1
           fi
+
           make -f src/tests/multi-server/all.mk
 
       - name: Verify test results
@@ -97,12 +99,15 @@ jobs:
         run: |
           set -euo pipefail
 
-          echo "============ ${MULTI_SERVER_TEST_LOG} ============"
-          cat "${MULTI_SERVER_TEST_LOG}"
+          cat ${MULTI_SERVER_LOG_DIR}/*.log > ${MULTI_SERVER_TEST_RESULTS_LOG}
+          cat ${MULTI_SERVER_LOG_DIR}/*.txt.bak > ${MULTI_SERVER_TEST_LISTENER_LOG}
 
-          if grep -q '\[Failed\]' "${MULTI_SERVER_TEST_LOG}"; then
+          echo "============ ${MULTI_SERVER_TEST_RESULTS_LOG} ============"
+          cat "${MULTI_SERVER_TEST_RESULTS_LOG}"
+
+          if grep -q '\[Failed\]' "${MULTI_SERVER_TEST_RESULTS_LOG}"; then
             echo "TEST FAILED: Found [Failed] in log"
-            grep '\[Failed\]' "${MULTI_SERVER_TEST_LOG}"
+            grep '\[Failed\]' "${MULTI_SERVER_TEST_RESULTS_LOG}"
 
             # Display the framework's listener log for debugging purposes
             echo "============ ${MULTI_SERVER_TEST_LISTENER_LOG} ============"
@@ -110,9 +115,9 @@ jobs:
             exit 1
           fi
 
-          if grep -Eq '\(Failures:[[:space:]]*[1-9][0-9]*[[:space:]]*\)' "${MULTI_SERVER_TEST_LOG}"; then
+          if grep -Eq '\(Failures:[[:space:]]*[1-9][0-9]*[[:space:]]*\)' "${MULTI_SERVER_TEST_RESULTS_LOG}"; then
             echo "TEST FAILED: Found Failures > 0 in log"
-            grep -E '\(Failures:[[:space:]]*[1-9][0-9]*[[:space:]]*\)' "${MULTI_SERVER_TEST_LOG}"
+            grep -E '\(Failures:[[:space:]]*[1-9][0-9]*[[:space:]]*\)' "${MULTI_SERVER_TEST_RESULTS_LOG}"
 
             # Display the framework's listener log for debugging purposes
             echo "============ ${MULTI_SERVER_TEST_LISTENER_LOG} ============"
@@ -120,7 +125,7 @@ jobs:
             exit 1
           fi
 
-          log="${MULTI_SERVER_TEST_LOG}"
+          log="${MULTI_SERVER_TEST_RESULTS_LOG}"
           if awk '
             BEGIN { found=0; n1=0; n2=0; line="" }
             index($0,"Matched:") {
@@ -152,7 +157,7 @@ jobs:
           fi
 
   # Job only runs on self-hosted runners
-  test-5hs-autoaccept-selfhosted:
+  run-multi-server-tests-selfhosted:
     needs: pre-test
     runs-on: self-hosted
     if: ${{ needs.pre-test.outputs.selfhosted == '1' }}
@@ -181,8 +186,9 @@ jobs:
           - ${{ github.workspace }}:/workspace
 
     env:
-      MULTI_SERVER_TEST_LOG: build/tests/multi-server/freeradius-multi-server/multi_server_test.log
-      MULTI_SERVER_TEST_LISTENER_LOG: build/tests/multi-server/freeradius-listener-logs/custom_test-env-5hs-autoaccept.txt.bak
+      MULTI_SERVER_LOG_DIR: build/tests/multi-server/freeradius-multi-server-test-runtime-logs
+      MULTI_SERVER_TEST_RESULTS_LOG: ${MULTI_SERVER_LOG_DIR}/multi-server-test-results-combined.log
+      MULTI_SERVER_TEST_LISTENER_LOG: ${MULTI_SERVER_LOG_DIR}/multi-server-test-listener-combined.log
 
     container:
       image: docker.internal.networkradius.com/self-hosted
@@ -232,21 +238,29 @@ jobs:
           docker tag freeradius4/ubuntu24:latest freeradius-build:latest
           docker images --all
 
-      - name: Run test-5hs-autoaccept test
+      - name: Run multi-server tests
         run: |
-          make -f src/tests/multi-server/all.mk test-5hs-autoaccept
+          if ! docker images --format '{{.Repository}}:{{.Tag}}' | grep -q "^freeradius-build:latest$"; then
+            echo "Error: freeradius-build:latest Docker image not found and required for multi-server test environment."
+            exit 1
+          fi
+
+          make -f src/tests/multi-server/all.mk
 
       - name: Verify test results
         shell: bash
         run: |
           set -euo pipefail
 
-          echo "============ ${MULTI_SERVER_TEST_LOG} ============"
-          cat "${MULTI_SERVER_TEST_LOG}"
+          cat ${MULTI_SERVER_LOG_DIR}/*.log > ${MULTI_SERVER_TEST_RESULTS_LOG}
+          cat ${MULTI_SERVER_LOG_DIR}/*.txt.bak > ${MULTI_SERVER_TEST_LISTENER_LOG}
 
-          if grep -q '\[Failed\]' "${MULTI_SERVER_TEST_LOG}"; then
+          echo "============ ${MULTI_SERVER_TEST_RESULTS_LOG} ============"
+          cat "${MULTI_SERVER_TEST_RESULTS_LOG}"
+
+          if grep -q '\[Failed\]' "${MULTI_SERVER_TEST_RESULTS_LOG}"; then
             echo "TEST FAILED: Found [Failed] in log"
-            grep '\[Failed\]' "${MULTI_SERVER_TEST_LOG}"
+            grep '\[Failed\]' "${MULTI_SERVER_TEST_RESULTS_LOG}"
 
             # Display the framework's listener log for debugging purposes
             echo "============ ${MULTI_SERVER_TEST_LISTENER_LOG} ============"
@@ -254,9 +268,9 @@ jobs:
             exit 1
           fi
 
-          if grep -Eq '\(Failures:[[:space:]]*[1-9][0-9]*[[:space:]]*\)' "${MULTI_SERVER_TEST_LOG}"; then
+          if grep -Eq '\(Failures:[[:space:]]*[1-9][0-9]*[[:space:]]*\)' "${MULTI_SERVER_TEST_RESULTS_LOG}"; then
             echo "TEST FAILED: Found Failures > 0 in log"
-            grep -E '\(Failures:[[:space:]]*[1-9][0-9]*[[:space:]]*\)' "${MULTI_SERVER_TEST_LOG}"
+            grep -E '\(Failures:[[:space:]]*[1-9][0-9]*[[:space:]]*\)' "${MULTI_SERVER_TEST_RESULTS_LOG}"
 
             # Display the framework's listener log for debugging purposes
             echo "============ ${MULTI_SERVER_TEST_LISTENER_LOG} ============"
@@ -264,7 +278,7 @@ jobs:
             exit 1
           fi
 
-          log="${MULTI_SERVER_TEST_LOG}"
+          log="${MULTI_SERVER_TEST_RESULTS_LOG}"
           if awk '
             BEGIN { found=0; n1=0; n2=0; line="" }
             index($0,"Matched:") {

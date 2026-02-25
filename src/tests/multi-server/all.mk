@@ -20,6 +20,10 @@ VERBOSE_ARG := $(VERBOSE_LEVEL_$(VERBOSE))
 
 .PHONY: 5hs-autoaccept-env-setup test-5hs-autoaccept test-5hs-autoaccept-5min 1p-2hs-autoaccept-env-setup test-1p-2hs-autoaccept test-1p-2hs-autoaccept-5min
 
+# Multi-server test targets to run a selection of tests
+multi-server: test-5hs-autoaccept test-1p-2hs-autoaccept
+multi-server-5min: test-5hs-autoaccept test-1p-2hs-autoaccept
+
 5hs-autoaccept-env-setup:
 	@set -e; \
 	\

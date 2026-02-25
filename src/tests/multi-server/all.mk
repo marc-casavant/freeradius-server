@@ -12,6 +12,9 @@ FREERADIUS_MULTI_SERVER_FRAMEWORK_GIT_REPO := https://github.com/InkbridgeNetwor
 
 FREERADIUS_MULTI_SERVER_TEST_RUNTIME_LOGS_DIR_ABS := $(FREERADIUS_MULTI_SERVER_BUILD_DIR_PATH_ABS)/freeradius-multi-server-test-runtime-logs
 
+MULTI_SERVER_TEST_RESULTS_LOG := $(FREERADIUS_MULTI_SERVER_TEST_RUNTIME_LOGS_DIR_ABS)/multi-server-test-results-combined.log
+MULTI_SERVER_TEST_LISTENER_LOG := $(FREERADIUS_MULTI_SERVER_TEST_RUNTIME_LOGS_DIR_ABS)/multi-server-test-listener-combined.log
+
 # Multi-server test verbosity level
 VERBOSE ?= 1
 VERBOSE_LEVEL_1 := -v
@@ -21,11 +24,11 @@ VERBOSE_LEVEL_4 := -vvvv
 VERBOSE_ARG := $(VERBOSE_LEVEL_$(VERBOSE))
 
 # Default Multi-server tests (1st target of Makefile)
-multi-server: test-5hs-autoaccept test-1p-2hs-autoaccept
+multi-server: test-5hs-autoaccept test-1p-2hs-autoaccept combine-test-results
 # Additional multi-server tests for longer runs
-multi-server-5min: test-5hs-autoaccept-5min test-1p-2hs-autoaccept-5min
+multi-server-5min: test-5hs-autoaccept-5min test-1p-2hs-autoaccept-5min combine-test-results
 
-.PHONY: 5hs-autoaccept-env-setup test-5hs-autoaccept test-5hs-autoaccept-5min 1p-2hs-autoaccept-env-setup test-1p-2hs-autoaccept test-1p-2hs-autoaccept-5min
+.PHONY: 5hs-autoaccept-env-setup test-5hs-autoaccept test-5hs-autoaccept-5min 1p-2hs-autoaccept-env-setup test-1p-2hs-autoaccept test-1p-2hs-autoaccept-5min combine-test-results
 
 5hs-autoaccept-env-setup:
 	@set -e; \
@@ -197,3 +200,9 @@ test-1p-2hs-autoaccept-5min: 1p-2hs-autoaccept-env-setup
 		--use-files \
 		--listener-dir "$(FREERADIUS_MULTI_SERVER_TEST_RUNTIME_LOGS_DIR_ABS)" \
 		--output "$(FREERADIUS_MULTI_SERVER_TEST_RUNTIME_LOGS_DIR_ABS)/$$TARGET_NAME.log"
+
+combine-test-results:
+	@echo "INFO: Combining test results into $(MULTI_SERVER_TEST_RESULTS_LOG)"
+	@rm -f $(MULTI_SERVER_TEST_RESULTS_LOG) $(MULTI_SERVER_TEST_LISTENER_LOG)
+	cat $(FREERADIUS_MULTI_SERVER_TEST_RUNTIME_LOGS_DIR_ABS)/*.log > $(MULTI_SERVER_TEST_RESULTS_LOG)
+	cat $(FREERADIUS_MULTI_SERVER_TEST_RUNTIME_LOGS_DIR_ABS)/*.txt.bak > $(MULTI_SERVER_TEST_LISTENER_LOG)

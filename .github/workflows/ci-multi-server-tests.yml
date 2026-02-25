@@ -29,7 +29,6 @@ jobs:
 
     env:
       MULTI_SERVER_ENV_DOCKER_BUILD_OS: ubuntu24
-      MULTI_SERVER_LOG_DIR: build/tests/multi-server/freeradius-multi-server-test-runtime-logs
       MULTI_SERVER_TEST_RESULTS_LOG: build/tests/multi-server/freeradius-multi-server-test-runtime-logs/multi-server-test-results-combined.log
       MULTI_SERVER_TEST_LISTENER_LOG: build/tests/multi-server/freeradius-multi-server-test-runtime-logs/multi-server-test-listener-combined.log
 
@@ -98,9 +97,6 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-
-          cat ${MULTI_SERVER_LOG_DIR}/*.log > ${MULTI_SERVER_TEST_RESULTS_LOG}
-          cat ${MULTI_SERVER_LOG_DIR}/*.txt.bak > ${MULTI_SERVER_TEST_LISTENER_LOG}
 
           echo "============ ${MULTI_SERVER_TEST_RESULTS_LOG} ============"
           cat "${MULTI_SERVER_TEST_RESULTS_LOG}"
@@ -186,7 +182,6 @@ jobs:
           - ${{ github.workspace }}:/workspace
 
     env:
-      MULTI_SERVER_LOG_DIR: build/tests/multi-server/freeradius-multi-server-test-runtime-logs
       MULTI_SERVER_TEST_RESULTS_LOG: build/tests/multi-server/freeradius-multi-server-test-runtime-logs/multi-server-test-results-combined.log
       MULTI_SERVER_TEST_LISTENER_LOG: build/tests/multi-server/freeradius-multi-server-test-runtime-logs/multi-server-test-listener-combined.log
 
@@ -251,9 +246,6 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-
-          cat ${MULTI_SERVER_LOG_DIR}/*.log > ${MULTI_SERVER_TEST_RESULTS_LOG}
-          cat ${MULTI_SERVER_LOG_DIR}/*.txt.bak > ${MULTI_SERVER_TEST_LISTENER_LOG}
 
           echo "============ ${MULTI_SERVER_TEST_RESULTS_LOG} ============"
           cat "${MULTI_SERVER_TEST_RESULTS_LOG}"

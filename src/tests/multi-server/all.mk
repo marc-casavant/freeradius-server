@@ -10,6 +10,8 @@ FREERADIUS_MULTI_SERVER_TESTS_BASE_PATH_ABS := $(FREERADIUS_SERVER_SRC_PATH_ABS)
 FREERADIUS_MULTI_SERVER_BUILD_DIR_PATH_ABS := $(FREERADIUS_SERVER_BUILD_DIR_PATH_ABS)/tests/multi-server
 FREERADIUS_MULTI_SERVER_FRAMEWORK_GIT_REPO := https://github.com/InkbridgeNetworks/freeradius-multi-server.git
 
+FREERADIUS_MULTI_SERVER_TEST_RUNTIME_LOGS_DIR_ABS := $(FREERADIUS_MULTI_SERVER_BUILD_DIR_PATH_ABS)/freeradius-multi-server-test-runtime-logs
+
 # Multi-server test verbosity level
 VERBOSE ?= 1
 VERBOSE_LEVEL_1 := -v
@@ -50,10 +52,9 @@ multi-server-5min: test-5hs-autoaccept-5min test-1p-2hs-autoaccept-5min
 	echo "INFO: Currently in $$(pwd)"; \
 	\
 	MULTI_SERVER_ENV_VARS_FILE_PATH_ABS="$(FREERADIUS_MULTI_SERVER_TESTS_BASE_PATH_ABS)/environments/jinja-vars/env-5hs-autoaccept.vars.yml"; \
-	MULTI_SERVER_FRAMEWORK_LISTENER_LOGS_DIR_ABS="$(FREERADIUS_MULTI_SERVER_BUILD_DIR_PATH_ABS)/freeradius-listener-logs"; \
 	JINJA_RENDERING_SCOPE_PATH_ABS="$(FREERADIUS_MULTI_SERVER_TESTS_BASE_PATH_ABS)"; \
 	echo "INFO: MULTI_SERVER_ENV_VARS_FILE_PATH_ABS=$$MULTI_SERVER_ENV_VARS_FILE_PATH_ABS"; \
-	echo "INFO: MULTI_SERVER_FRAMEWORK_LISTENER_LOGS_DIR_ABS=$$MULTI_SERVER_FRAMEWORK_LISTENER_LOGS_DIR_ABS"; \
+	echo "INFO: FREERADIUS_MULTI_SERVER_TEST_RUNTIME_LOGS_DIR_ABS=$(FREERADIUS_MULTI_SERVER_TEST_RUNTIME_LOGS_DIR_ABS)"; \
 	echo "INFO: JINJA_RENDERING_SCOPE_PATH_ABS=$$JINJA_RENDERING_SCOPE_PATH_ABS"; \
 	\
 	python3 src/config_builder.py \
@@ -75,7 +76,8 @@ multi-server-5min: test-5hs-autoaccept-5min test-1p-2hs-autoaccept-5min
 test-5hs-autoaccept: 5hs-autoaccept-env-setup
 	@set -e; \
 	\
-	MULTI_SERVER_FRAMEWORK_LISTENER_LOGS_DIR_ABS="$(FREERADIUS_MULTI_SERVER_BUILD_DIR_PATH_ABS)/freeradius-listener-logs"; \
+	TARGET_NAME=test-5hs-autoaccept; \
+	\
 	cd $(FREERADIUS_MULTI_SERVER_BUILD_DIR_PATH_ABS)/freeradius-multi-server; \
 	. .venv/bin/activate; \
 	\
@@ -86,12 +88,14 @@ test-5hs-autoaccept: 5hs-autoaccept-env-setup
 		--compose "$(FREERADIUS_MULTI_SERVER_TESTS_BASE_PATH_ABS)/environments/docker-compose/env-5hs-autoaccept.yml" \
 		--test "$(FREERADIUS_MULTI_SERVER_TESTS_BASE_PATH_ABS)/test-5hs-autoaccept.yml" \
 		--use-files \
-		--listener-dir "$$MULTI_SERVER_FRAMEWORK_LISTENER_LOGS_DIR_ABS"
+		--listener-dir "$(FREERADIUS_MULTI_SERVER_TEST_RUNTIME_LOGS_DIR_ABS)" \
+		--output "$(FREERADIUS_MULTI_SERVER_TEST_RUNTIME_LOGS_DIR_ABS)/$$TARGET_NAME.log"
 
 test-5hs-autoaccept-5min: 5hs-autoaccept-env-setup
 	@set -e; \
 	\
-	MULTI_SERVER_FRAMEWORK_LISTENER_LOGS_DIR_ABS="$(FREERADIUS_MULTI_SERVER_BUILD_DIR_PATH_ABS)/freeradius-listener-logs"; \
+	TARGET_NAME=test-5hs-autoaccept-5min; \
+	\
 	cd $(FREERADIUS_MULTI_SERVER_BUILD_DIR_PATH_ABS)/freeradius-multi-server; \
 	. .venv/bin/activate; \
 	\
@@ -102,7 +106,8 @@ test-5hs-autoaccept-5min: 5hs-autoaccept-env-setup
 		--compose "$(FREERADIUS_MULTI_SERVER_TESTS_BASE_PATH_ABS)/environments/docker-compose/env-5hs-autoaccept.yml" \
 		--test "$(FREERADIUS_MULTI_SERVER_TESTS_BASE_PATH_ABS)/test-5hs-autoaccept-5min.yml" \
 		--use-files \
-		--listener-dir "$$MULTI_SERVER_FRAMEWORK_LISTENER_LOGS_DIR_ABS"
+		--listener-dir "$(FREERADIUS_MULTI_SERVER_TEST_RUNTIME_LOGS_DIR_ABS)" \
+		--output "$(FREERADIUS_MULTI_SERVER_TEST_RUNTIME_LOGS_DIR_ABS)/$$TARGET_NAME.log"
 
 1p-2hs-autoaccept-env-setup:
 	@set -e; \
@@ -129,10 +134,9 @@ test-5hs-autoaccept-5min: 5hs-autoaccept-env-setup
 	echo "INFO: Currently in $$(pwd)"; \
 	\
 	MULTI_SERVER_ENV_VARS_FILE_PATH_ABS="$(FREERADIUS_MULTI_SERVER_TESTS_BASE_PATH_ABS)/environments/jinja-vars/env-1p-2hs-autoaccept.vars.yml"; \
-	MULTI_SERVER_FRAMEWORK_LISTENER_LOGS_DIR_ABS="$(FREERADIUS_MULTI_SERVER_BUILD_DIR_PATH_ABS)/freeradius-listener-logs"; \
 	JINJA_RENDERING_SCOPE_PATH_ABS="$(FREERADIUS_MULTI_SERVER_TESTS_BASE_PATH_ABS)"; \
 	echo "INFO: MULTI_SERVER_ENV_VARS_FILE_PATH_ABS=$$MULTI_SERVER_ENV_VARS_FILE_PATH_ABS"; \
-	echo "INFO: MULTI_SERVER_FRAMEWORK_LISTENER_LOGS_DIR_ABS=$$MULTI_SERVER_FRAMEWORK_LISTENER_LOGS_DIR_ABS"; \
+	echo "INFO: FREERADIUS_MULTI_SERVER_TEST_RUNTIME_LOGS_DIR_ABS=$(FREERADIUS_MULTI_SERVER_TEST_RUNTIME_LOGS_DIR_ABS)"; \
 	echo "INFO: JINJA_RENDERING_SCOPE_PATH_ABS=$$JINJA_RENDERING_SCOPE_PATH_ABS"; \
 	\
 	python3 src/config_builder.py \
@@ -159,7 +163,8 @@ test-5hs-autoaccept-5min: 5hs-autoaccept-env-setup
 test-1p-2hs-autoaccept: 1p-2hs-autoaccept-env-setup
 	@set -e; \
 	\
-	MULTI_SERVER_FRAMEWORK_LISTENER_LOGS_DIR_ABS="$(FREERADIUS_MULTI_SERVER_BUILD_DIR_PATH_ABS)/freeradius-listener-logs"; \
+	TARGET_NAME=test-1p-2hs-autoaccept; \
+	\
 	cd $(FREERADIUS_MULTI_SERVER_BUILD_DIR_PATH_ABS)/freeradius-multi-server; \
 	. .venv/bin/activate; \
 	\
@@ -170,12 +175,14 @@ test-1p-2hs-autoaccept: 1p-2hs-autoaccept-env-setup
 		--compose "$(FREERADIUS_MULTI_SERVER_TESTS_BASE_PATH_ABS)/environments/docker-compose/env-1p-2hs-autoaccept.yml" \
 		--test "$(FREERADIUS_MULTI_SERVER_TESTS_BASE_PATH_ABS)/test-1p-2hs-autoaccept.yml" \
 		--use-files \
-		--listener-dir "$$MULTI_SERVER_FRAMEWORK_LISTENER_LOGS_DIR_ABS"
+		--listener-dir "$(FREERADIUS_MULTI_SERVER_TEST_RUNTIME_LOGS_DIR_ABS)" \
+		--output "$(FREERADIUS_MULTI_SERVER_TEST_RUNTIME_LOGS_DIR_ABS)/$$TARGET_NAME.log"
 
 test-1p-2hs-autoaccept-5min: 1p-2hs-autoaccept-env-setup
 	@set -e; \
 	\
-	MULTI_SERVER_FRAMEWORK_LISTENER_LOGS_DIR_ABS="$(FREERADIUS_MULTI_SERVER_BUILD_DIR_PATH_ABS)/freeradius-listener-logs"; \
+	TARGET_NAME=test-1p-2hs-autoaccept-5min; \
+	\
 	cd $(FREERADIUS_MULTI_SERVER_BUILD_DIR_PATH_ABS)/freeradius-multi-server; \
 	. .venv/bin/activate; \
 	\
@@ -186,4 +193,5 @@ test-1p-2hs-autoaccept-5min: 1p-2hs-autoaccept-env-setup
 		--compose "$(FREERADIUS_MULTI_SERVER_TESTS_BASE_PATH_ABS)/environments/docker-compose/env-1p-2hs-autoaccept.yml" \
 		--test "$(FREERADIUS_MULTI_SERVER_TESTS_BASE_PATH_ABS)/test-1p-2hs-autoaccept-5min.yml" \
 		--use-files \
-		--listener-dir "$$MULTI_SERVER_FRAMEWORK_LISTENER_LOGS_DIR_ABS"
+		--listener-dir "$(FREERADIUS_MULTI_SERVER_TEST_RUNTIME_LOGS_DIR_ABS)" \
+		--output "$(FREERADIUS_MULTI_SERVER_TEST_RUNTIME_LOGS_DIR_ABS)/$$TARGET_NAME.log"

@@ -29,12 +29,15 @@ modules {
 	# Common linelog module configuration
 	{% include "environments/configs/freeradius/common/mods-available/linelog" %}
 
-	# Test-framework specific linelog module configuration based on OS environment
+	# Test framework linelog module configuration based on OS environment
 	{% if listener_type == "unix" %}
         {% include "environments/configs/freeradius/common/mods-available/linelog_socket" %}
 	{% elif listener_type == "file" %}
         {% include "environments/configs/freeradius/common/mods-available/linelog_file" %}
 	{% endif %}
+
+	# Common json module configuration
+	{% include "environments/configs/freeradius/common/mods-available/json" %}
 
 	# Common stats module configuration
 	{% include "environments/configs/freeradius/common/mods-available/stats" %}
@@ -154,10 +157,30 @@ server load-generator {
 	#  Receive a Status-Server packet
 	#
 	recv Status-Server {
+		uint32 Status-Server-Counter
+		uint32 Access-Request-Counter
+		uint32 Access-Accept-Counter
+		uint32 Access-Reject-Counter
+		string Test-Result
+		string Test-Result-Message
+
+		# Initialization
+		Status-Server-Counter := 0
+		Access-Request-Counter := 0
+		Access-Accept-Counter := 0
+		Access-Reject-Counter := 0
+		Test-Result := "FAIL"
+		Test-Result-Message := "-"
+
 		# stats module required to have access to the Status-Server's global statistics
 		stats
 
 		{%raw%}
+		Status-Server-Counter := %{reply.FreeRADIUS.Stats4.Packet-Counters.Status-Server || 0}
+		Access-Request-Counter := %{reply.FreeRADIUS.Stats4.Packet-Counters.Access-Request || 0}
+		Access-Accept-Counter := %{reply.FreeRADIUS.Stats4.Packet-Counters.Access-Accept || 0}
+		Access-Reject-Counter := %{reply.FreeRADIUS.Stats4.Packet-Counters.Access-Reject || 0}
+
 		%linelog_test_framework("loadgen-recv-status-server - INFO - reply.FreeRADIUS.Stats4.Packet-Counters.Status-Server: %{reply.FreeRADIUS.Stats4.Packet-Counters.Status-Server || 0}")
 		%linelog_test_framework("loadgen-recv-status-server - INFO - reply.FreeRADIUS.Stats4.Packet-Counters.Access-Request: %{reply.FreeRADIUS.Stats4.Packet-Counters.Access-Request || 0}")
 		%linelog_test_framework("loadgen-recv-status-server - INFO - reply.FreeRADIUS.Stats4.Packet-Counters.Access-Accept: %{reply.FreeRADIUS.Stats4.Packet-Counters.Access-Accept || 0}")
@@ -166,12 +189,19 @@ server load-generator {
 		# The Stats Module documentation explicitly states: "When listed in a recv Status-Server section, it will add global server statistics to the packet,
 		# hence the reason "reply.FreeRADIUS.Stats4" is used below.
 		if ((reply.FreeRADIUS.Stats4.Packet-Counters.Access-Accept - reply.FreeRADIUS.Stats4.Packet-Counters.Status-Server) != reply.FreeRADIUS.Stats4.Packet-Counters.Access-Request) {
-			%linelog_test_framework("loadgen-recv-status-server - ERROR - expected vs actual stat missmatch, reply.FreeRADIUS.Stats4.Packet-Counters.Access-Request = %{reply.FreeRADIUS.Stats4.Packet-Counters.Access-Request}, reply.FreeRADIUS.Stats4.Packet-Counters.Access-Accept = %{reply.FreeRADIUS.Stats4.Packet-Counters.Access-Accept}, reply.FreeRADIUS.Stats4.Packet-Counters.Status-Server: %{reply.FreeRADIUS.Stats4.Packet-Counters.Status-Server}")
+			Test-Result := "FAIL"
+			Test-Result-Message := "expected vs actual stat mismatch"
+			%linelog_test_framework("loadgen-recv-status-server - ERROR - expected vs actual stat mismatch, reply.FreeRADIUS.Stats4.Packet-Counters.Access-Request = %{reply.FreeRADIUS.Stats4.Packet-Counters.Access-Request}, reply.FreeRADIUS.Stats4.Packet-Counters.Access-Accept = %{reply.FreeRADIUS.Stats4.Packet-Counters.Access-Accept}, reply.FreeRADIUS.Stats4.Packet-Counters.Status-Server: %{reply.FreeRADIUS.Stats4.Packet-Counters.Status-Server}")
 		}
 
 		if (reply.FreeRADIUS.Stats4.Packet-Counters.Access-Request == (reply.FreeRADIUS.Stats4.Packet-Counters.Access-Accept - reply.FreeRADIUS.Stats4.Packet-Counters.Status-Server)) {
+			Test-Result := "PASS"
+			Test-Result-Message := "requests processed successfully"
 			%linelog_test_framework("loadgen-recv-status-server - INFO - %{reply.FreeRADIUS.Stats4.Packet-Counters.Access-Request} requests processed successfully, reply.FreeRADIUS.Stats4.Packet-Counters.Access-Request = %{reply.FreeRADIUS.Stats4.Packet-Counters.Access-Request}, reply.FreeRADIUS.Stats4.Packet-Counters.Access-Accept = %{reply.FreeRADIUS.Stats4.Packet-Counters.Access-Accept}, reply.FreeRADIUS.Stats4.Packet-Counters.Status-Server = %{reply.FreeRADIUS.Stats4.Packet-Counters.Status-Server}")
 		}
+
+		%linelog_test_framework("load-generator-status-server {\"Test-Result\": %{Test-Result}, \"Test-Result-Message\": %{Test-Result-Message}, \"Status-Server-Counter\": %{Status-Server-Counter}, \"Access-Request-Counter\": %{Access-Request-Counter}, \"Access-Accept-Counter\": %{Access-Accept-Counter}, \"Access-Reject-Counter\": %{Access-Reject-Counter}}")
+
 		{%endraw%}
 	}
 

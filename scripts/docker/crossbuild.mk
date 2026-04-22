@@ -94,21 +94,14 @@ crossbuild.help: crossbuild.info
 	@echo "    crossbuild.IMAGE.wipe    - remove Docker image"
 	@echo ""
 	@echo "Profiling targets:"
-	@echo "    crossbuild.IMAGE.profregen              - regenerate Dockerfile.prof using default profile ($(PROFILE))"
+	@echo "    crossbuild.IMAGE.profregen                 - regenerate Dockerfile.prof using default profile ($(PROFILE))"
 	@echo "    crossbuild.IMAGE.profregen PROFILE=<name>  - regenerate using a specific profile"
-	@echo "    crossbuild.IMAGE.profbuild              - build profiling image using default profile ($(PROFILE))"
-	@echo "    crossbuild.IMAGE.profbuild PROFILE=<name>  - build using a specific profile"
+	@echo "    crossbuild.IMAGE.profbuild                 - build profiling image using default profile ($(PROFILE))"
 	@echo ""
 	@echo "Available profiling profiles (scripts/docker/profiling/profiles/):"
-	@echo "    valgrind-callgrind       - callgrind call graph and instruction profiling"
-	@echo "    valgrind-massif          - FUTURE: massif heap memory profiling"
-	@echo "    gperftools-cpu           - FUTURE: gperftools CPU profiling"
-	@echo ""
-	@echo "Profiling examples:"
-	@echo "    make crossbuild.ubuntu24.profregen"
-	@echo "    make crossbuild.ubuntu24.profregen PROFILE=valgrind-callgrind"
-	@echo "    make crossbuild.ubuntu24.profbuild"
-	@echo "    make crossbuild.ubuntu24.profbuild PROFILE=gperftools-cpu"
+	@echo "    profiling1      - callgrind call graph and instruction profiling"
+	@echo "    profiling2      - FUTURE: e.g. massif heap memory profiling"
+	@echo "    profiling3      - FUTURE: e.g. gperftools CPU profiling"
 	@echo ""
 	@echo "Use 'make NOCACHE=1 ...' to disregard the Docker cache on build"
 
@@ -167,10 +160,10 @@ $(DD)/stamp-image.${1}:
 crossbuild.${1}.profbuild: $(DD)/stamp-image.${1}-profbuild
 
 $(DD)/stamp-image.${1}-profbuild: $(DT)/${1}/Dockerfile.prof
-	${Q}echo "BUILD ${1} ($(CB_IPREFIX)/${1}-prof) > $(DD)/build.${1}-profbuild"
+	${Q}echo "BUILD ${1} (freeradius4-$(PROFILE)/${1}) > $(DD)/build.${1}-profbuild"
 	${Q}docker build $(DOCKER_BUILD_OPTS) . \
 		-f $(DT)/${1}/Dockerfile.prof \
-		-t $(CB_IPREFIX)/${1}-prof \
+		-t freeradius4-$(PROFILE)/${1} \
 		>$(DD)/build.${1}-profbuild 2>&1
 	${Q}touch $(DD)/stamp-image.${1}-profbuild
 

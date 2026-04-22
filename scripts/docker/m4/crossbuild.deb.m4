@@ -28,6 +28,34 @@ RUN apt-get update && \
 
 
 #
+#  Install profiling tools
+#
+RUN apt-get update && \
+    apt-get install $APT_OPTS \
+        libgoogle-perftools-dev \
+        google-perftools \
+        valgrind \
+        heaptrack \
+        psmisc \
+        kcachegrind \
+        kio \
+        libkf5iconthemes5 \
+        libkf5parts5 \
+        libkf5textwidgets5 \
+        libqt5gui5 \
+        libqt5widgets5 && \
+    apt-get clean && \
+    rm -r /var/lib/apt/lists/*
+
+#
+#  Install FlameGraph scripts
+#
+RUN git clone --depth 1 https://github.com/brendangregg/FlameGraph /opt/flamegraph \
+    && chmod +x /opt/flamegraph/*.pl /opt/flamegraph/*.sh
+
+ENV PATH="/opt/flamegraph:${PATH}"
+
+#
 #  Set up NetworkRADIUS extras repository
 #
 RUN install -d -o root -g root -m 0755 /etc/apt/keyrings && \

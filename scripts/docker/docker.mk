@@ -22,7 +22,7 @@ DT:=$(CB_DIR)/build
 DOCKER_TMPL:=$(CB_DIR)/m4/Dockerfile.m4
 
 # List of all the docker images (sorted for "docker.info")
-IMAGES:=$(sort $(patsubst $(DT)/%,%,$(wildcard $(DT)/*)))
+IMAGES:=$(sort $(filter-out profiling,$(patsubst $(DT)/%,%,$(wildcard $(DT)/*))))
 
 # Don't use the Docker cache if asked
 ifneq "$(NOCACHE)" ""

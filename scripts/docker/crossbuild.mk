@@ -26,7 +26,8 @@ DD:=$(CB_DIR)/crossbuild
 DOCKER_TMPL:=$(CB_DIR)/m4/Dockerfile.m4
 
 # List of all the docker images (sorted for "crossbuild.info")
-CB_IMAGES:=$(sort $(patsubst $(DT)/%,%,$(wildcard $(DT)/*)))
+CB_IMAGES := $(sort $(filter-out profiling,\
+    $(patsubst $(DT)/%/,%,$(wildcard $(DT)/*/))))
 
 # Location of the .git dir (may be different for e.g. submodules)
 GITDIR:=$(shell perl -MCwd -e 'print Cwd::abs_path shift' $$(git rev-parse --git-dir))
@@ -39,6 +40,8 @@ endif
 # Docker image and container name prefixes
 CB_IPREFIX:=freeradius40x-build
 CB_CPREFIX:=fr40x-crossbuild-
+
+PROFILE ?= profiling1
 
 #
 #  This Makefile is included in-line, and not via the "boilermake"
@@ -90,6 +93,23 @@ crossbuild.help: crossbuild.info
 	@echo "    crossbuild.IMAGE.clean   - stop container and tidy up"
 	@echo "    crossbuild.IMAGE.wipe    - remove Docker image"
 	@echo ""
+	@echo "Profiling targets:"
+	@echo "    crossbuild.IMAGE.profregen              - regenerate Dockerfile.prof using default profile ($(PROFILE))"
+	@echo "    crossbuild.IMAGE.profregen PROFILE=<name>  - regenerate using a specific profile"
+	@echo "    crossbuild.IMAGE.profbuild              - build profiling image using default profile ($(PROFILE))"
+	@echo "    crossbuild.IMAGE.profbuild PROFILE=<name>  - build using a specific profile"
+	@echo ""
+	@echo "Available profiling profiles (scripts/docker/profiling/profiles/):"
+	@echo "    valgrind-callgrind       - callgrind call graph and instruction profiling"
+	@echo "    valgrind-massif          - FUTURE: massif heap memory profiling"
+	@echo "    gperftools-cpu           - FUTURE: gperftools CPU profiling"
+	@echo ""
+	@echo "Profiling examples:"
+	@echo "    make crossbuild.ubuntu24.profregen"
+	@echo "    make crossbuild.ubuntu24.profregen PROFILE=valgrind-callgrind"
+	@echo "    make crossbuild.ubuntu24.profbuild"
+	@echo "    make crossbuild.ubuntu24.profbuild PROFILE=gperftools-cpu"
+	@echo ""
 	@echo "Use 'make NOCACHE=1 ...' to disregard the Docker cache on build"
 
 #
@@ -139,6 +159,20 @@ $(DD)/stamp-image.${1}:
 	${Q}echo "BUILD ${1} ($(CB_IPREFIX)/${1}) > $(DD)/build.${1}"
 	${Q}docker build $(DOCKER_BUILD_OPTS) $(DT)/${1} -f $(DT)/${1}/Dockerfile.cb -t $(CB_IPREFIX)/${1} >$(DD)/build.${1} 2>&1
 	${Q}touch $(DD)/stamp-image.${1}
+
+#
+#  Build the profiling image
+#
+.PHONY: crossbuild.${1}.profbuild
+crossbuild.${1}.profbuild: $(DD)/stamp-image.${1}-profbuild
+
+$(DD)/stamp-image.${1}-profbuild: $(DT)/${1}/Dockerfile.prof
+	${Q}echo "BUILD ${1} ($(CB_IPREFIX)/${1}-prof) > $(DD)/build.${1}-profbuild"
+	${Q}docker build $(DOCKER_BUILD_OPTS) . \
+		-f $(DT)/${1}/Dockerfile.prof \
+		-t $(CB_IPREFIX)/${1}-prof \
+		>$(DD)/build.${1}-profbuild 2>&1
+	${Q}touch $(DD)/stamp-image.${1}-profbuild
 
 #
 #  Start up the docker container
@@ -248,6 +282,21 @@ crossbuild.${1}.regen: $(DT)/${1}/Dockerfile.cb
 $(DT)/${1}/Dockerfile.cb: $(DOCKER_TMPL) $(CB_DIR)/m4/crossbuild.deb.m4 $(CB_DIR)/m4/crossbuild.rpm.m4
 	${Q}echo REGEN ${1}
 	${Q}m4 -I $(CB_DIR)/m4 -D D_NAME=${1} -D D_TYPE=crossbuild $$< > $$@
+
+#
+#  Regenerate Dockerfile.prof from m4 template
+#
+.PHONY: crossbuild.${1}.profregen
+crossbuild.${1}.profregen: $(DT)/${1}/Dockerfile.prof
+
+$(DT)/${1}/Dockerfile.prof: $(DOCKER_TMPL) $(CB_DIR)/m4/profiling.deb.m4 $(CB_DIR)/m4/profiling.rpm.m4
+	${Q}echo REGEN ${1}
+	${Q}m4 -I $(CB_DIR)/m4 \
+	    -D D_NAME=${1} \
+	    -D D_TYPE=profiling \
+	    -D CB_IMAGE=$(CB_IPREFIX)/${1} \
+	    -D PROFILE_NAME=$(PROFILE) \
+	    $$< > $$@
 
 #
 #  Run the build test

@@ -128,13 +128,6 @@ jobs:
           --health-timeout 5s
           --health-retries 5
 
-      #
-      #  No redpanda service container: seastar exits EINVAL on these
-      #  runners with the default command, and GitHub Actions services
-      #  don't let us override it.  Kafka module tests skip here; the
-      #  multi-server kafka-produce test covers the produce path instead.
-      #
-
     steps:
 
       #  Need git installed for checkout to behave normally

@@ -41,7 +41,6 @@ typedef struct {
 } fr_coord_worker_pair_cb_reg_t;
 
 typedef struct {
-	char const			*name;			//!< Name for log entries / request names.
 	fr_coord_worker_pair_cb_reg_t	*worker_cb;		//!< Callbacks for coordinator -> worker pair messages.
 	fr_dict_attr_t const		*root;			//!< Root attribute for decoding pair list messages.
 	uint32_t			cb_id;			//!< Coordinator callback id used for pair list messages.
@@ -50,7 +49,7 @@ typedef struct {
 								///< Defaults to main config max request time.
 } fr_coord_pair_reg_ctx_t;
 
-fr_coord_pair_reg_t	*fr_coord_pair_register(fr_coord_pair_reg_ctx_t *reg_ctx);
+fr_coord_pair_reg_t	*fr_coord_pair_register(TALLOC_CTX *ctx, fr_coord_pair_reg_ctx_t *reg_ctx);
 
 int		fr_coord_to_worker_reply_send(request_t *request, uint32_t worker_id);
 

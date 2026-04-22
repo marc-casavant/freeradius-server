@@ -686,7 +686,6 @@ static int mod_detach(module_detach_ctx_t const *mctx)
 	rlm_crl_t	*inst = talloc_get_type_abort(mctx->mi->data, rlm_crl_t);
 
 	fr_coord_deregister(inst->coord_reg);
-	talloc_free(inst->coord_pair_reg);
 	return 0;
 }
 
@@ -716,8 +715,8 @@ static int mod_instantiate(module_inst_ctx_t const *mctx)
 #ifdef WITH_TLS
 	rlm_crl_t	*inst = talloc_get_type_abort(mctx->mi->data, rlm_crl_t);
 
-	inst->coord_pair_reg = fr_coord_pair_register(&(fr_coord_pair_reg_ctx_t) {
-			.name = mctx->mi->name,
+	inst->coord_pair_reg = fr_coord_pair_register(inst,
+		&(fr_coord_pair_reg_ctx_t) {
 			.worker_cb = worker_pair_callbacks,
 			.cb_id = CRL_COORD_PAIR_CALLBACK_ID,
 			.root = fr_dict_root(dict_crl),
@@ -728,7 +727,8 @@ static int mod_instantiate(module_inst_ctx_t const *mctx)
 
 	FR_COORD_PAIR_CB_CTX_SET(coord_callbacks, worker_callbacks, inst->coord_pair_reg);
 
-	inst->coord_reg = fr_coord_register(&(fr_coord_reg_ctx_t) {
+	inst->coord_reg = fr_coord_register(inst,
+		&(fr_coord_reg_ctx_t) {
 			.name = mctx->mi->name,
 			.coord_cb = coord_callbacks,
 			.worker_cb = worker_callbacks,

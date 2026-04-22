@@ -1446,8 +1446,8 @@ static bool check_for_zombie(fr_event_list_t *el, trunk_connection_t *tconn, fr_
 	/*
 	 *	If we've seen ANY response in the allowed window, then the connection is still alive.
 	 */
-	if ((h->ctx.inst->mode == RLM_RADIUS_MODE_PROXY) &&
-	    fr_time_gt(h->last_reply, fr_time_sub(now, h->ctx.inst->response_window))) return false;
+	if ((h->ctx.inst->mode == RLM_RADIUS_MODE_PROXY) && fr_time_gt(last_sent, fr_time_wrap(0)) &&
+	    (fr_time_lt(fr_time_add(last_sent, h->ctx.inst->response_window), now))) return false;
 
 	/*
 	 *	Stop using it for new requests.
@@ -1456,14 +1456,6 @@ static bool check_for_zombie(fr_event_list_t *el, trunk_connection_t *tconn, fr_
 	trunk_connection_signal_inactive(tconn);
 
 	if (h->ctx.inst->status_check) {
-		/*
-		 *	If it's UDP, reconnect.  This will start the sending of status checks.
-		 */
-		if (h->ctx.inst->fd_config.socket_type == SOCK_DGRAM) {
-			(void) trunk_connection_requests_requeue(tconn, TRUNK_REQUEST_STATE_ALL, 0, false);
-			trunk_connection_signal_reconnect(tconn, CONNECTION_FAILED);
-		}
-
 		h->status_checking = true;
 
 		/*
@@ -1649,7 +1641,7 @@ static void mod_write(request_t *request, trunk_request_t *treq, bio_handle_t *h
 		  (treq->state == TRUNK_REQUEST_STATE_PARTIAL) ||
 		  ((u->retry.count > 0) && (treq->state == TRUNK_REQUEST_STATE_SENT)));
 
-	fr_assert(!u->status_check || h->status_checking);
+	fr_assert(!u->status_check);
 
 	/*
 	 *	If it's a partial packet, then write the partial bit.
@@ -1810,7 +1802,7 @@ do_write:
 		action = "Retransmitted";
 	}
 
-	fr_assert(!u->status_check || h->status_checking);
+	fr_assert(!u->status_check);
 
 	if (!u->proxied) {
 		RDEBUG("%s request.  Expecting response within %pVs", action,

@@ -8,6 +8,8 @@ crossbuild crossbuild.help :
 	@echo crossbuild requires Docker to be installed
 else
 
+UNAME_M := $(shell uname -m)
+
 #
 #  Short list of common builds
 #
@@ -27,6 +29,28 @@ DOCKER_TMPL:=$(CB_DIR)/m4/Dockerfile.m4
 
 # List of all the docker images (sorted for "crossbuild.info")
 CB_IMAGES:=$(sort $(patsubst $(DT)/%,%,$(wildcard $(DT)/*)))
+
+# Where the profiling docker directories are
+PT:=$(CB_DIR)/profiling
+
+# Docker image and container name prefixes for profiling builds
+CB_PROF_IPREFIX:=freeradius40x-prof
+CB_PROF_CPREFIX:=fr40x-prof-
+
+# List of profiling images (only directories that contain a Dockerfile.cb)
+CB_PROF_IMAGES:=$(sort $(patsubst $(PT)/%/Dockerfile.cb,%,$(wildcard $(PT)/*/Dockerfile.cb)))
+
+#
+#  Building from arm64 is not supported. Check if a build target was requested.
+#
+ifneq (,$(filter $(UNAME_M),arm64 aarch64))
+_CB_BUILD_TARGETS := crossbuild crossbuild.common crossbuild.prof \
+    $(foreach IMG,$(CB_IMAGES),crossbuild.$(IMG)) \
+    $(foreach IMG,$(CB_PROF_IMAGES),crossbuild.$(IMG).prof)
+ifneq (,$(filter $(_CB_BUILD_TARGETS),$(MAKECMDGOALS)))
+$(error Building from arm64 is currently not supported)
+endif
+endif
 
 # Location of the .git dir (may be different for e.g. submodules)
 GITDIR:=$(shell perl -MCwd -e 'print Cwd::abs_path shift' $$(git rev-parse --git-dir))
@@ -78,6 +102,7 @@ crossbuild.help: crossbuild.info
 	@echo "    crossbuild.reset         - remove cache of docker state"
 	@echo "    crossbuild.clean         - down and reset all targets"
 	@echo "    crossbuild.wipe          - destroy all crossbuild Docker images"
+	@echo "    crossbuild.regen         - regenerate all Dockerfiles from m4 templates"
 	@echo ""
 	@echo "Per-image targets:"
 	@echo "    crossbuild.IMAGE         - build and test image <IMAGE>"
@@ -89,6 +114,28 @@ crossbuild.help: crossbuild.info
 	@echo "    crossbuild.IMAGE.reset   - remove cache of docker state"
 	@echo "    crossbuild.IMAGE.clean   - stop container and tidy up"
 	@echo "    crossbuild.IMAGE.wipe    - remove Docker image"
+	@echo "    crossbuild.IMAGE.regen   - regenerate Dockerfile from m4 template"
+	@echo ""
+	@echo "Profiling targets (use scripts/docker/profiling/* Dockerfiles):"
+	@echo "    crossbuild.prof              - build and test all profiling images"
+	@echo "    crossbuild.prof.info         - list profiling images"
+	@echo "    crossbuild.prof.down         - stop all profiling containers"
+	@echo "    crossbuild.prof.reset        - remove cache of docker state (profiling)"
+	@echo "    crossbuild.prof.clean        - down and reset all profiling targets"
+	@echo "    crossbuild.prof.wipe         - destroy all profiling Docker images"
+	@echo "    crossbuild.prof.regen        - regenerate all profiling Dockerfiles from m4 templates"
+	@echo ""
+	@echo "Per-image profiling targets:"
+	@echo "    crossbuild.IMAGE.prof        - build and test profiling image <IMAGE>"
+	@echo "    crossbuild.IMAGE.prof.log    - show latest build log"
+	@echo "    crossbuild.IMAGE.prof.up     - start profiling container"
+	@echo "    crossbuild.IMAGE.prof.down   - stop profiling container"
+	@echo "    crossbuild.IMAGE.prof.sh     - shell in profiling container"
+	@echo "    crossbuild.IMAGE.prof.refresh - push latest commits into container"
+	@echo "    crossbuild.IMAGE.prof.reset  - remove cache of docker state"
+	@echo "    crossbuild.IMAGE.prof.clean  - stop container and tidy up"
+	@echo "    crossbuild.IMAGE.prof.wipe   - remove Docker image"
+	@echo "    crossbuild.IMAGE.prof.regen  - regenerate profiling Dockerfile from m4 template"
 	@echo ""
 	@echo "Use 'make NOCACHE=1 ...' to disregard the Docker cache on build"
 
@@ -116,6 +163,24 @@ crossbuild.wipe: $(foreach IMG,${CB_IMAGES},crossbuild.${IMG}.wipe)
 #  Regenerate all Dockerfiles from m4 templates
 #
 crossbuild.regen: $(foreach IMG,${CB_IMAGES},crossbuild.${IMG}.regen)
+
+#
+#  Profiling top-level targets
+#
+.PHONY: crossbuild.prof
+crossbuild.prof: crossbuild.prof.info $(foreach IMG,${CB_PROF_IMAGES},crossbuild.${IMG}.prof)
+
+.PHONY: crossbuild.prof.info crossbuild.prof.info_header
+crossbuild.prof.info: crossbuild.prof.info_header $(foreach IMG,${CB_PROF_IMAGES},crossbuild.${IMG}.prof.status)
+
+crossbuild.prof.info_header:
+	@echo Profiling Images:
+
+crossbuild.prof.reset: $(foreach IMG,${CB_PROF_IMAGES},crossbuild.${IMG}.prof.reset)
+crossbuild.prof.down: $(foreach IMG,${CB_PROF_IMAGES},crossbuild.${IMG}.prof.down)
+crossbuild.prof.clean: $(foreach IMG,${CB_PROF_IMAGES},crossbuild.${IMG}.prof.clean)
+crossbuild.prof.wipe: $(foreach IMG,${CB_PROF_IMAGES},crossbuild.${IMG}.prof.wipe)
+crossbuild.prof.regen: $(foreach IMG,${CB_PROF_IMAGES},crossbuild.${IMG}.prof.regen)
 
 
 #
@@ -262,6 +327,151 @@ endef
 #
 $(foreach IMAGE,$(CB_IMAGES),\
   $(eval $(call CROSSBUILD_IMAGE_RULE,$(IMAGE))))
+
+
+#
+#  Define rules for building a particular profiling image.
+#  Uses scripts/docker/profiling/IMAGE/Dockerfile.cb instead of
+#  scripts/docker/build/IMAGE/Dockerfile.cb.  Stamp files and log
+#  files get a "-prof" suffix to avoid collisions with regular builds.
+#
+define CROSSBUILD_PROF_IMAGE_RULE
+
+#
+#  Show status (based on stamp files)
+#
+.PHONY: crossbuild.${1}.prof.status
+crossbuild.${1}.prof.status:
+	${Q}printf "%s" "`echo \"  ${1}                    \" | cut -c 1-20`"
+	${Q}if [ -e "$(DD)/stamp-up.${1}-prof" ]; then echo "running"; \
+		elif [ -e "$(DD)/stamp-image.${1}-prof" ]; then echo "built"; \
+		else echo "-"; fi
+
+#
+#  Build the docker image from the profiling Dockerfile.cb
+#
+$(DD)/stamp-image.${1}-prof:
+	${Q}echo "BUILD ${1} ($(CB_PROF_IPREFIX)/${1}) > $(DD)/build.${1}-prof"
+	${Q}echo "  Dockerfile: $(PT)/${1}/Dockerfile.cb"
+	${Q}docker build $(DOCKER_BUILD_OPTS) $(PT)/${1} -f $(PT)/${1}/Dockerfile.cb -t $(CB_PROF_IPREFIX)/${1} >$(DD)/build.${1}-prof 2>&1
+	${Q}touch $(DD)/stamp-image.${1}-prof
+
+#
+#  Start up the docker container
+#
+.PHONY: $(DD)/docker.up.${1}-prof
+$(DD)/docker.up.${1}-prof: $(DD)/stamp-image.${1}-prof
+	${Q}echo "START ${1} ($(CB_PROF_CPREFIX)${1})"
+	${Q}docker container inspect $(CB_PROF_CPREFIX)${1} >/dev/null 2>&1 || \
+		docker run -d --rm \
+		--privileged --cap-add=ALL \
+		--mount=type=bind,source="$(GITDIR)",destination=/srv/src,ro \
+		--name $(CB_PROF_CPREFIX)${1} $(CB_PROF_IPREFIX)/${1} \
+		/bin/sh -c 'while true; do sleep 60; done' >/dev/null
+
+$(DD)/stamp-up.${1}-prof: $(DD)/docker.up.${1}-prof
+	${Q}touch $(DD)/stamp-up.${1}-prof
+
+.PHONY: crossbuild.${1}.prof.up
+crossbuild.${1}.prof.up: $(DD)/stamp-up.${1}-prof
+
+#
+#  Refresh and run tests in the container
+#
+.PHONY: $(DD)/docker.refresh.${1}-prof
+$(DD)/docker.refresh.${1}-prof: $(DD)/stamp-up.${1}-prof
+	${Q}echo "REFRESH ${1}"
+	${Q}docker container exec $(CB_PROF_CPREFIX)${1} sh -lc 'rsync -a /srv/src/ /srv/local-src/'
+	${Q}docker container exec $(CB_PROF_CPREFIX)${1} sh -lc 'git config -f /srv/local-src/config core.bare true'
+	${Q}docker container exec $(CB_PROF_CPREFIX)${1} sh -lc 'git config -f /srv/local-src/config --unset core.worktree || true'
+	${Q}docker container exec $(CB_PROF_CPREFIX)${1} sh -lc 'git config --global --add safe.directory /srv/local-src'
+	${Q}docker container exec $(CB_PROF_CPREFIX)${1} sh -lc '[ -d /srv/build ] || git clone /srv/local-src /srv/build'
+	${Q}docker container exec $(CB_PROF_CPREFIX)${1} sh -lc '(cd /srv/build && git pull --rebase)'
+	${Q}docker container exec $(CB_PROF_CPREFIX)${1} sh -lc '[ -e /srv/build/config.log ] || echo CONFIGURE ${1}'
+	${Q}docker container exec $(CB_PROF_CPREFIX)${1} sh -lc '[ -e /srv/build/config.log ] || (cd /srv/build && ./configure -C)' > $(DD)/configure.${1}-prof 2>&1
+
+.PHONY: $(DD)/docker.run.${1}-prof
+$(DD)/docker.run.${1}-prof: $(DD)/docker.refresh.${1}-prof
+	${Q}echo "TEST ${1} > $(DD)/log.${1}-prof"
+	${Q}docker container exec $(CB_PROF_CPREFIX)${1} sh -lc '(cd /srv/build && make && make test)' > $(DD)/log.${1}-prof 2>&1 || ( echo FAIL ${1} && false )
+
+#
+#  Stop the docker container
+#
+.PHONY: crossbuild.${1}.prof.down
+crossbuild.${1}.prof.down:
+	@echo STOP ${1}
+	${Q}docker container kill $(CB_PROF_CPREFIX)${1} || true
+	@rm -f $(DD)/stamp-up.${1}-prof
+
+.PHONY: crossbuild.${1}.prof.clean
+crossbuild.${1}.prof.clean: crossbuild.${1}.prof.down crossbuild.${1}.prof.reset
+
+#
+#  Shell into container
+#
+.PHONY: crossbuild.${1}.prof.sh
+crossbuild.${1}.prof.sh: crossbuild.${1}.prof.up
+	${Q}docker exec -it $(CB_PROF_CPREFIX)${1} sh -c 'cd / ; cd /srv/build 2>/dev/null; bash' || true
+
+#
+#  Show last build logs
+#
+.PHONY: crossbuild.${1}.prof.log
+crossbuild.${1}.prof.log:
+	@if which less >/dev/null; then \
+		less +G $(DD)/log.${1}-prof;\
+	elif which more >/dev/null; then \
+		more $(DD)/log.${1}-prof;\
+	else cat $(DD)/log.${1}-prof; fi
+
+#
+#  Tidy up stamp files
+#
+.PHONY: crossbuild.${1}.prof.reset
+crossbuild.${1}.prof.reset:
+	${Q}echo RESET ${1}
+	${Q}rm -f $(DD)/stamp-up.${1}-prof
+	${Q}rm -f $(DD)/stamp-image.${1}-prof
+
+#
+#  Remove Docker image
+#
+.PHONY: crossbuild.${1}.prof.wipe
+crossbuild.${1}.prof.wipe:
+	${Q}echo CLEAN ${1}
+	${Q}docker image rm $(CB_PROF_IPREFIX)/${1} >/dev/null 2>&1 || true
+	${Q}rm -f $(DD)/stamp-image.${1}-prof
+
+#
+#  Refresh git repository within the docker container
+#
+.PHONY: crossbuild.${1}.prof.refresh
+crossbuild.${1}.prof.refresh: $(DD)/docker.refresh.${1}-prof
+
+#
+#  Regenerate the profiling Dockerfile.cb from the m4 templates
+#
+.PHONY: crossbuild.${1}.prof.regen
+crossbuild.${1}.prof.regen: $(PT)/${1}/Dockerfile.cb
+
+$(PT)/${1}/Dockerfile.cb: $(DOCKER_TMPL) $(CB_DIR)/m4/crossbuild.deb.m4 $(CB_DIR)/m4/crossbuild.rpm.m4
+	${Q}echo REGEN ${1}
+	${Q}m4 -I $(CB_DIR)/m4 -D D_NAME=${1} -D D_TYPE=profiling $$< > $$@
+
+#
+#  Run the build test
+#
+.PHONY: crossbuild.${1}.prof
+crossbuild.${1}.prof: $(DD)/docker.run.${1}-prof
+
+endef
+
+#
+#  Add all the profiling image building rules
+#
+$(foreach IMAGE,$(CB_PROF_IMAGES),\
+  $(eval $(call CROSSBUILD_PROF_IMAGE_RULE,$(IMAGE))))
 
 
 # if docker is defined

@@ -94,6 +94,25 @@ dnl for tests:
         oathtool
 
 
+ifelse(D_TYPE, `profiling', `
+#
+#  Install profiling tools
+#
+RUN apt-get install $APT_OPTS \
+        libgoogle-perftools-dev \
+        google-perftools \
+        valgrind \
+        heaptrack \
+        psmisc \
+        kcachegrind \
+        kio \
+        libkf5iconthemes5 \
+        libkf5parts5 \
+        libkf5textwidgets5 \
+        libqt5gui5 \
+        libqt5widgets5
+')dnl
+
 #
 #  Setup a src dir in /usr/local
 #

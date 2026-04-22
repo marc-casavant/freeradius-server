@@ -34,9 +34,9 @@ ifelse(
 undefine([p_SET])
 divert[]dnl
 [#] Auto generated for D_NAME
-[#] from scripts/docker/m4/D_TYPE.PKG_TYPE.m4
+[#] from scripts/docker/m4/ifelse(D_TYPE, [profiling], [crossbuild], D_TYPE).PKG_TYPE.m4
 [#]
-[#] Rebuild this file with `make D_TYPE.D_NAME.regen`
+[#] Rebuild this file with `make ifelse(D_TYPE, [profiling], [crossbuild.]D_NAME[.prof.regen], D_TYPE[.]D_NAME[.regen])`
 [#]
 changequote([`], ['])dnl
-include(D_TYPE.PKG_TYPE.m4)dnl
+include(ifelse(D_TYPE, `profiling', `crossbuild', D_TYPE).PKG_TYPE.m4)dnl

@@ -483,7 +483,6 @@ static int cf_pair_unescape(CONF_PAIR *cp, conf_parser_t const *rule)
 
 				*q++ = oct;
 				p = end;
-				continue;
 			} else {
 				*q++ = *p;
 			}
@@ -911,12 +910,6 @@ static int cf_section_parse_init(CONF_SECTION *cs, void *base, conf_parser_t con
 		return 0;
 	}
 
-	/*
-	 *	CONF_FLAG_NO_OUTPUT means the rule has no framework-managed
-	 *	output slot - nothing to NULL-init.
-	 */
-	if (rule->flags & CONF_FLAG_NO_OUTPUT) return 0;
-
 	if (rule->data) {
 		*(char **) rule->data = NULL;
 	} else if (base) {
@@ -980,29 +973,11 @@ static int cf_subsection_parse(TALLOC_CTX *ctx, void *out, void *base, CONF_SECT
 	size_t			subcs_size = rule->subcs_size;
 	conf_parser_t const	*rules = rule->subcs;
 
-	/*
-	 *	CF_IDENT_ANY section rules act as a catch-all: skip any
-	 *	subsection that's already been claimed and marked parsed
-	 *	by an earlier specific rule, so the wildcard only handles
-	 *	the leftovers.  CONF_FLAG_ALWAYS_PARSE overrides this and
-	 *	makes the rule observe every matching subsection.
-	 */
-	bool const		skip_parsed = (rule->name1 == CF_IDENT_ANY) &&
-					      !(rule->flags & CONF_FLAG_ALWAYS_PARSE);
-
-	bool const		no_output = (rule->flags & CONF_FLAG_NO_OUTPUT);
-
 	uint8_t			**array = NULL;
 
 	fr_assert(rule->flags & CONF_FLAG_SUBSECTION);
 
-	if (skip_parsed) {
-		while ((subcs = cf_section_find_next(cs, subcs, rule->name1, rule->name2))) {
-			if (!cf_item_is_parsed(cf_section_to_item(subcs))) break;
-		}
-	} else {
-		subcs = cf_section_find(cs, rule->name1, rule->name2);
-	}
+	subcs = cf_section_find(cs, rule->name1, rule->name2);
 	if (!subcs) return 0;
 
 	/*
@@ -1028,7 +1003,7 @@ static int cf_subsection_parse(TALLOC_CTX *ctx, void *out, void *base, CONF_SECT
 		 */
 	 	if (!subcs_size) return cf_section_parse(ctx, out, subcs);
 
-		if (out && !no_output) {
+		if (out) {
 			MEM(buff = talloc_zero_array(ctx, uint8_t, subcs_size));
 			if (rule->subcs_type) talloc_set_name_const(buff, rule->subcs_type);
 		}
@@ -1039,7 +1014,7 @@ static int cf_subsection_parse(TALLOC_CTX *ctx, void *out, void *base, CONF_SECT
 			return ret;
 		}
 
-		if (out && !no_output) *((uint8_t **)out) = buff;
+		if (out) *((uint8_t **)out) = buff;
 
 		return 0;
 	}
@@ -1050,15 +1025,12 @@ static int cf_subsection_parse(TALLOC_CTX *ctx, void *out, void *base, CONF_SECT
 	 *	Handle the multi subsection case (which is harder)
 	 */
 	subcs = NULL;
-	while ((subcs = cf_section_find_next(cs, subcs, rule->name1, rule->name2))) {
-		if (skip_parsed && cf_item_is_parsed(cf_section_to_item(subcs))) continue;
-		count++;
-	}
+	while ((subcs = cf_section_find_next(cs, subcs, rule->name1, rule->name2))) count++;
 
 	/*
 	 *	Allocate an array to hold the subsections
 	 */
-	if (out && !no_output) {
+	if (out) {
 		MEM(array = talloc_zero_array(ctx, uint8_t *, count));
 		if (rule->subcs_type) talloc_set_name(array, "%s *", rule->subcs_type);
 	}
@@ -1072,8 +1044,6 @@ static int cf_subsection_parse(TALLOC_CTX *ctx, void *out, void *base, CONF_SECT
 	subcs = NULL;
 	while ((subcs = cf_section_find_next(cs, subcs, rule->name1, rule->name2))) {
 		uint8_t *buff = NULL;
-
-		if (skip_parsed && cf_item_is_parsed(cf_section_to_item(subcs))) continue;
 
 		if (DEBUG_ENABLED4) cf_log_debug(cs, "Evaluating rules for %s[%i] section.  Output %p",
 						 cf_section_name1(subcs),
@@ -1109,7 +1079,7 @@ static int cf_subsection_parse(TALLOC_CTX *ctx, void *out, void *base, CONF_SECT
 		}
 	}
 
-	if (out && !no_output) *((uint8_t ***)out) = array;
+	if (out) *((uint8_t ***)out) = array;
 
 	return 0;
 }
@@ -1133,16 +1103,7 @@ static int cf_section_parse_rule(TALLOC_CTX *ctx, void *base, CONF_SECTION *cs, 
 
 	if (rule->data) {
 		data = rule->data; /* prefer this. */
-	} else if (base &&
-		   (!(rule->flags & CONF_FLAG_NO_OUTPUT) || (rule->flags & CONF_FLAG_SUBSECTION))) {
-		/*
-		 *	CONF_FLAG_NO_OUTPUT on a pair rule means leave
-		 *	data NULL so the framework won't write through
-		 *	base+offset.  For subsections it only suppresses
-		 *	the end-of-MULTI array write (handled inside
-		 *	cf_subsection_parse) - we still need to pass
-		 *	`base` through so nested rules can address into it.
-		 */
+	} else if (base) {
 		data = ((uint8_t *)base) + rule->offset;
 	}
 
@@ -1151,38 +1112,6 @@ static int cf_section_parse_rule(TALLOC_CTX *ctx, void *base, CONF_SECTION *cs, 
 	 */
 	if (rule->flags & CONF_FLAG_SUBSECTION) {
 		return cf_subsection_parse(ctx, data, base, cs, rule);
-	}
-
-	/*
-	 *	A pair rule with name1 == CF_IDENT_ANY is a catch-all:
-	 *	feed every still-unparsed CONF_PAIR in this section to the
-	 *	rule's parser func.  Order matters - specific rules before
-	 *	this entry have already claimed (and marked parsed) their
-	 *	pairs, so the catch-all only sees the leftovers, unless
-	 *	CONF_FLAG_ALWAYS_PARSE is set (in which case it sees every
-	 *	pair regardless).
-	 *
-	 *	The rule must provide a func; there's no sensible default
-	 *	output offset when the pair's name varies.  The func
-	 *	receives one CONF_PAIR at a time via ci and can read the
-	 *	name via cf_pair_attr().
-	 */
-	if (!(rule->flags & CONF_FLAG_REF) && rule->name1 == CF_IDENT_ANY) {
-		bool const	always_parse = (rule->flags & CONF_FLAG_ALWAYS_PARSE);
-		CONF_PAIR	*cp = NULL;
-
-		if (!rule->func) {
-			cf_log_err(cs, "CF_IDENT_ANY pair rule must provide a parse function");
-			return -1;
-		}
-
-		while ((cp = cf_pair_find_next(cs, cp, NULL))) {
-			if (!always_parse && cf_item_is_parsed(cf_pair_to_item(cp))) continue;
-
-			if (rule->func(ctx, data, base, cf_pair_to_item(cp), rule) < 0) return -1;
-			cf_item_mark_parsed(cf_pair_to_item(cp));
-		}
-		return 0;
 	}
 
 	/*
@@ -1415,7 +1344,7 @@ int cf_section_parse_pass2(void *base, CONF_SECTION *cs)
 			 *	Select base by whether this is a nested struct,
 			 *	or a pointer to another struct.
 			 */
-			if (!base || (flags & CONF_FLAG_NO_OUTPUT)) {
+			if (!base) {
 				subcs_base = NULL;
 			} else if (multi) {
 				size_t		j, len;
@@ -1446,7 +1375,7 @@ int cf_section_parse_pass2(void *base, CONF_SECTION *cs)
 		 *	Figure out which data we need to fix.
 		 */
 		data = rule->data; /* prefer this. */
-		if (!data && base && !(rule->flags & CONF_FLAG_NO_OUTPUT)) data = ((char *)base) + rule->offset;
+		if (!data && base) data = ((char *)base) + rule->offset;
 		if (!data) continue;
 
 		/*

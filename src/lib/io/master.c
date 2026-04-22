@@ -1700,21 +1700,11 @@ have_client:
 	 *	let it read from the socket.
 	 */
 	if (accept_fd >= 0) {
-		connection = fr_io_connection_alloc(inst, thread, client, accept_fd, &address, NULL);
-		if (!connection) {
+		if (!fr_io_connection_alloc(inst, thread, client, accept_fd, &address, NULL)) {
 			static fr_rate_limit_t alloc_failed;
 
 			RATE_LIMIT_LOCAL(thread ? &thread->rate_limit.conn_alloc_failed : &alloc_failed,
 					 ERROR, "Failed to allocate connection from client %s", client->radclient->shortname);
-			return -1;
-		}
-
-		/*
-		 *	The parent is in use - ensure the cleanup timer is disarmed.
-		 */
-		if (fr_timer_armed(connection->parent->ev)) {
-			FR_TIMER_DISARM_RETURN(connection->parent->ev);
-			connection->parent->ready_to_delete = false;
 		}
 
 		return 0;
@@ -1859,7 +1849,7 @@ have_client:
 		 *	want to clean it up.
 		 */
 		if (fr_timer_armed(client->ev)) {
-			FR_TIMER_DISARM_RETURN(client->ev);
+			FR_TIMER_DELETE_RETURN(&client->ev);
 			client->ready_to_delete = false;
 		}
 
@@ -1867,7 +1857,7 @@ have_client:
 		 *	Remove cleanup timers for the connection parent.
 		 */
 		if (connection && fr_timer_armed(connection->parent->ev)) {
-			FR_TIMER_DISARM_RETURN(connection->parent->ev);
+			FR_TIMER_DELETE_RETURN(&connection->parent->ev);
 			connection->parent->ready_to_delete = false;
 		}
 

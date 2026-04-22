@@ -1330,11 +1330,8 @@ static void rs_packet_process(uint64_t count, rs_event_t *event, struct pcap_pkt
 	 */
 	len = (p - data) + sizeof(udp_header_t) + RADIUS_HEADER_LENGTH;	/* length value */
 	if ((size_t) len > header->caplen) {
-		char src[INET6_ADDRSTRLEN];
-		inet_ntop(version == 4 ? AF_INET : AF_INET6,
-			  version == 4 ? (void const *)&ip->ip_src.s_addr : (void const *)&ip6->ip_src, src, sizeof(src));
-		REDEBUG("Packet from %s too small, we require at least %zu bytes, captured %i bytes",
-			src, (size_t) len, header->caplen);
+		REDEBUG("Packet too small, we require at least %zu bytes, captured %i bytes",
+			(size_t) len, header->caplen);
 		return;
 	}
 
@@ -1350,11 +1347,8 @@ static void rs_packet_process(uint64_t count, rs_event_t *event, struct pcap_pkt
 		actual_len = header->caplen - (p - data);
 		/* Truncated data */
 		if (udp_len > actual_len) {
-			char src[INET6_ADDRSTRLEN];
-			inet_ntop(version == 4 ? AF_INET : AF_INET6,
-				  version == 4 ? (void const *)&ip->ip_src.s_addr : (void const *)&ip6->ip_src, src, sizeof(src));
-			REDEBUG("Packet from %s too small by %zi bytes, UDP header + Payload should be %hu bytes",
-				src, udp_len - actual_len, udp_len);
+			REDEBUG("Packet too small by %zi bytes, UDP header + Payload should be %hu bytes",
+				udp_len - actual_len, udp_len);
 			return;
 		}
 
@@ -1666,10 +1660,6 @@ static void rs_packet_process(uint64_t count, rs_event_t *event, struct pcap_pkt
 		}
 		search.expect->code = packet->code;
 		memcpy(search.expect->vector, packet->vector, sizeof(search.expect->vector));
-		if (conf->verify_radius_authenticator) {
-			search.expect->data_len = packet->data_len;
-			search.expect->data = talloc_memdup(search.expect, packet->data, packet->data_len);
-		}
 
 		if ((conf->link_da_num > 0) && (!fr_pair_list_empty(&decoded))) {
 			int ret;

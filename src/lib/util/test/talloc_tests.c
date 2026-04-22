@@ -866,6 +866,40 @@ static void test_talloc_bstr_realloc(void)
 }
 
 /*
+ *	talloc_memcmp_array - compare uint8_t arrays
+ */
+static void test_talloc_memcmp_array(void)
+{
+	TALLOC_CTX	*ctx;
+	uint8_t		*a, *b;
+	uint8_t		data3[] = {1, 2, 3};
+	uint8_t		data4a[] = {1, 2, 3, 4};
+	uint8_t		data4b[] = {1, 2, 4, 4};
+
+	ctx = talloc_init_const("test");
+
+	TEST_CASE("Equal arrays");
+	a = talloc_typed_memdup(ctx, data3, sizeof(data3));
+	b = talloc_typed_memdup(ctx, data3, sizeof(data3));
+	TEST_CHECK(talloc_memcmp_array(a, b) == 0);
+
+	TEST_CASE("First array longer");
+	talloc_free(a);
+	a = talloc_typed_memdup(ctx, data4a, sizeof(data4a));
+	TEST_CHECK(talloc_memcmp_array(a, b) > 0);
+
+	TEST_CASE("Second array longer");
+	TEST_CHECK(talloc_memcmp_array(b, a) < 0);
+
+	TEST_CASE("Same length, different content");
+	talloc_free(b);
+	b = talloc_typed_memdup(ctx, data4b, sizeof(data4b));
+	TEST_CHECK(talloc_memcmp_array(a, b) < 0);  /* 3 < 4 */
+
+	talloc_free(ctx);
+}
+
+/*
  *	talloc_memcmp_bstr - compare char arrays
  */
 static void test_talloc_memcmp_bstr(void)
@@ -910,7 +944,43 @@ static void test_talloc_typed_memdup(void)
 }
 
 /*
- *	talloc_array_null_terminate
+ *	talloc_buffer_append_buffer - concatenate talloc strings
+ */
+static void test_talloc_buffer_append_buffer(void)
+{
+	TALLOC_CTX	*ctx;
+	char		*a, *result;
+
+	ctx = talloc_init_const("test");
+
+	TEST_CASE("Concatenate two talloc strings");
+	a = talloc_strdup(ctx, "hello ");
+	{
+		char *b = talloc_strdup(ctx, "world");
+		result = talloc_buffer_append_buffer(ctx, a, b);
+		TEST_ASSERT(result != NULL);
+		TEST_CHECK(strcmp(result, "hello world") == 0);
+		talloc_free(b);
+	}
+
+	TEST_CASE("NULL first arg returns NULL");
+	{
+		char *b = talloc_strdup(ctx, "test");
+		result = talloc_buffer_append_buffer(ctx, NULL, b);
+		TEST_CHECK(result == NULL);
+		talloc_free(b);
+	}
+
+	TEST_CASE("NULL second arg returns NULL");
+	a = talloc_strdup(ctx, "hello");
+	result = talloc_buffer_append_buffer(ctx, a, NULL);
+	TEST_CHECK(result == NULL);
+
+	talloc_free(ctx);
+}
+
+/*
+ *	talloc_array_null_terminate / talloc_array_null_strip
  */
 static void test_talloc_array_null_terminate(void)
 {
@@ -930,8 +1000,16 @@ static void test_talloc_array_null_terminate(void)
 	TEST_CHECK(result[3] == NULL);
 	TEST_CHECK(result[0] == (void *)1);
 
+	TEST_CASE("Strip NULL termination");
+	result = talloc_array_null_strip(result);
+	TEST_ASSERT(result != NULL);
+	TEST_CHECK(talloc_array_length(result) == 3);
+
 	TEST_CASE("NULL terminate NULL returns NULL");
 	TEST_CHECK(talloc_array_null_terminate(NULL) == NULL);
+
+	TEST_CASE("NULL strip NULL returns NULL");
+	TEST_CHECK(talloc_array_null_strip(NULL) == NULL);
 
 	talloc_free(ctx);
 }
@@ -1012,6 +1090,61 @@ static void test_talloc_hdr_size(void)
 
 	TEST_CASE("Repeated calls return same value");
 	TEST_CHECK(talloc_hdr_size() == hdr);
+}
+
+/*
+ *	talloc_child_ctx - ordered allocation and deallocation
+ */
+static int child_free_order[4];
+static int child_free_idx;
+
+static int _track_free_order(int *ptr)
+{
+	int val = *ptr;
+	if (child_free_idx < 4) child_free_order[child_free_idx++] = val;
+	return 0;
+}
+
+static void test_talloc_child_ctx(void)
+{
+	TALLOC_CTX	*ctx;
+	TALLOC_CHILD_CTX *list, *c1, *c2, *c3;
+	int		*v1, *v2, *v3;
+
+	ctx = talloc_init_const("test");
+
+	TEST_CASE("Child ctx init");
+	list = talloc_child_ctx_init(ctx);
+	TEST_ASSERT(list != NULL);
+
+	TEST_CASE("Allocate children in order");
+	c1 = talloc_child_ctx_alloc(list);
+	TEST_ASSERT(c1 != NULL);
+	v1 = talloc(c1, int);
+	*v1 = 1;
+	talloc_set_destructor(v1, _track_free_order);
+
+	c2 = talloc_child_ctx_alloc(list);
+	TEST_ASSERT(c2 != NULL);
+	v2 = talloc(c2, int);
+	*v2 = 2;
+	talloc_set_destructor(v2, _track_free_order);
+
+	c3 = talloc_child_ctx_alloc(list);
+	TEST_ASSERT(c3 != NULL);
+	v3 = talloc(c3, int);
+	*v3 = 3;
+	talloc_set_destructor(v3, _track_free_order);
+
+	TEST_CASE("Children freed in FILO order");
+	child_free_idx = 0;
+	memset(child_free_order, 0, sizeof(child_free_order));
+	talloc_free(ctx);
+
+	/* FILO: c3 (newest) freed first, then c2, then c1 */
+	TEST_CHECK(child_free_order[0] == 3);
+	TEST_CHECK(child_free_order[1] == 2);
+	TEST_CHECK(child_free_order[2] == 1);
 }
 
 /*
@@ -1133,12 +1266,15 @@ TEST_LIST = {
 	{ "talloc_bstrndup",			test_talloc_bstrndup },
 	{ "talloc_bstr_append",			test_talloc_bstr_append },
 	{ "talloc_bstr_realloc",		test_talloc_bstr_realloc },
+	{ "talloc_memcmp_array",		test_talloc_memcmp_array },
 	{ "talloc_memcmp_bstr",			test_talloc_memcmp_bstr },
 	{ "talloc_typed_memdup",		test_talloc_typed_memdup },
+	{ "talloc_buffer_append_buffer",	test_talloc_buffer_append_buffer },
 	{ "talloc_array_null_terminate",	test_talloc_array_null_terminate },
 	{ "talloc_destructor_add",		test_talloc_destructor_add },
 	{ "talloc_link_ctx",			test_talloc_link_ctx },
 	{ "talloc_hdr_size",			test_talloc_hdr_size },
+	{ "talloc_child_ctx",			test_talloc_child_ctx },
 	{ "talloc_realloc_zero",		test_talloc_realloc_zero },
 	{ "talloc_decrease_ref_count",		test_talloc_decrease_ref_count },
 	{ "talloc_aligned_array",		test_talloc_aligned_array },

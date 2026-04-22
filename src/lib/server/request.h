@@ -58,31 +58,29 @@ extern "C" {
 #endif
 
 /*
- *	Stack +
- *	4 pair lists and root +
- *	2 packets +
- *	some extra for VPs
- *
- *	Stack frames are allocated within the stack pool.
+ *	Stack pool +
+ *	Stack Frames +
+ *	packets +
+ *	extra
  */
-#define REQUEST_POOL_NUM_OBJECTS ( \
+#define REQUEST_POOL_HEADERS	( \
 					1 + \
-					5 + \
+					UNLANG_STACK_MAX + \
 					2 + \
 					10 \
-				 )
+				)
 
 /*
  *	Stack memory +
- *	4 pair lists and root +
- *	2 packets +
- *	some extra for VPs
+ *	pair lists and root +
+ *	packets +
+ *	extra
  */
 #define REQUEST_POOL_SIZE	( \
-					UNLANG_STACK_POOL_SIZE + \
+					(UNLANG_FRAME_PRE_ALLOC * UNLANG_STACK_MAX) + \
 					(sizeof(fr_pair_t) * 5) + \
 					(sizeof(fr_packet_t) * 2) + \
-					(sizeof(fr_pair_t) * 10) \
+					128 \
 				)
 
 typedef enum {

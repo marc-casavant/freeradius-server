@@ -18,11 +18,17 @@ CB_DIR:=$(dir $(realpath $(lastword $(MAKEFILE_LIST))))
 # Where the docker directories are
 DT:=$(CB_DIR)/build
 
+# Where the profiling docker directories are
+PT:=$(CB_DIR)/profiling
+
 # Location of top-level m4 template
 DOCKER_TMPL:=$(CB_DIR)/m4/Dockerfile.m4
 
 # List of all the docker images (sorted for "docker.info")
 IMAGES:=$(sort $(patsubst $(DT)/%,%,$(wildcard $(DT)/*)))
+
+# List of all profiling images (sorted)
+PROF_IMAGES:=$(sort $(patsubst $(PT)/%,%,$(wildcard $(PT)/*)))
 
 # Don't use the Docker cache if asked
 ifneq "$(NOCACHE)" ""
@@ -73,6 +79,9 @@ docker.help:
 	@echo "    docker.IMAGE.build       - build image as $(D_IPREFIX)/<IMAGE>"
 	@echo "    docker.IMAGE.regen       - regenerate Dockerfile from template"
 	@echo ""
+	@echo "Per-image server profiling targets:"
+	@echo "    docker.IMAGE.prof        - build profiling image as $(D_IPREFIX)/<IMAGE>-prof"
+	@echo ""
 	@echo "Use 'make NOCACHE=1 ...' to disregard the Docker cache on build"
 
 #
@@ -120,6 +129,30 @@ endef
 #
 $(foreach IMAGE,$(IMAGES),\
   $(eval $(call CROSSBUILD_IMAGE_RULE,$(IMAGE))))
+
+#
+#  Define rules for building server profiling images
+#
+define PROFILING_IMAGE_RULE
+
+.PHONY: docker.${1}.prof
+docker.${1}.prof:
+	${Q}echo "BUILD ${1} ($(D_IPREFIX)/${1}-prof) from $(PT)/${1}/Dockerfile"
+
+	${Q}docker buildx build \
+		$(DOCKER_BUILD_OPTS) \
+		--progress=plain \
+		. \
+		-f $(PT)/${1}/Dockerfile \
+		-t $(D_IPREFIX)/${1}-prof
+
+endef
+
+#
+#  Add all the profiling image building rules
+#
+$(foreach IMAGE,$(PROF_IMAGES),\
+  $(eval $(call PROFILING_IMAGE_RULE,$(IMAGE))))
 
 
 # if docker is defined

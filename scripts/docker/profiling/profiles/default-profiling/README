@@ -1,0 +1,22 @@
+Vallgrind/Callgrind profiling with:
+- cache and branch simulation
+- per-thread output
+- instruction-level detail
+
+Builds with debug symbols and reduced optimisation (-g3 -O1) so that
+callgrind output can be annotated back to source lines.
+
+Server is run under valgrind with the following options (start.sh):
+
+  --cache-sim=yes        Simulate L1/LL cache behaviour (I1, D1, LL miss counts)
+  --branch-sim=yes       Simulate branch prediction (Bc/Bcm, Bi/Bim counts)
+  --dump-instr=yes       Collect per-instruction costs (required for source annotation)
+  --collect-jumps=yes    Record conditional and indirect jump targets
+  --trace-children=yes   Follow forked child processes into valgrind
+  --separate-threads=yes Write a separate callgrind.out.<pid>-<tid> file per thread
+
+Configure flags (configure.sh):
+  -g3 -O1 -fno-omit-frame-pointer
+
+Use this profile as the baseline for call-graph and cache-miss analysis with
+kcachegrind / qcachegrind.

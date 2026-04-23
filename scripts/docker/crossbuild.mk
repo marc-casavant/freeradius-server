@@ -26,8 +26,7 @@ DD:=$(CB_DIR)/crossbuild
 DOCKER_TMPL:=$(CB_DIR)/m4/Dockerfile.m4
 
 # List of all the docker images (sorted for "crossbuild.info")
-CB_IMAGES := $(sort $(filter-out profiling,\
-    $(patsubst $(DT)/%/,%,$(wildcard $(DT)/*/))))
+CB_IMAGES:=$(sort $(patsubst $(DT)/%,%,$(wildcard $(DT)/*)))
 
 # Location of the .git dir (may be different for e.g. submodules)
 GITDIR:=$(shell perl -MCwd -e 'print Cwd::abs_path shift' $$(git rev-parse --git-dir))
@@ -41,7 +40,13 @@ endif
 CB_IPREFIX:=freeradius40x-build
 CB_CPREFIX:=fr40x-crossbuild-
 
-PROFILE ?= profiling1
+PROFILE ?= default-profiling
+
+# Where profiling profiles live
+PROFILES_DIR:=$(CB_DIR)/profiling/profiles
+
+# All available profiling profiles (one sub-directory per profile)
+CB_PROFILES:=$(sort $(patsubst $(PROFILES_DIR)/%,%,$(wildcard $(PROFILES_DIR)/*)))
 
 #
 #  This Makefile is included in-line, and not via the "boilermake"
@@ -98,11 +103,6 @@ crossbuild.help: crossbuild.info
 	@echo "    crossbuild.IMAGE.profregen PROFILE=<name>  - regenerate using a specific profile"
 	@echo "    crossbuild.IMAGE.profbuild                 - build profiling image using default profile ($(PROFILE))"
 	@echo "    crossbuild.IMAGE.profreset                 - remove profiling stamp and Dockerfile.prof to force rebuild"
-	@echo ""
-	@echo "Available profiling profiles (scripts/docker/profiling/profiles/):"
-	@echo "    profiling1      - callgrind call graph and instruction profiling"
-	@echo "    profiling2      - FUTURE: e.g. massif heap memory profiling"
-	@echo "    profiling3      - FUTURE: e.g. gperftools CPU profiling"
 	@echo ""
 	@echo "Use 'make NOCACHE=1 ...' to disregard the Docker cache on build"
 

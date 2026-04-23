@@ -1,8 +1,13 @@
-ARG from=CB_IMAGE
+# Auto generated for ubuntu24
+# from scripts/docker/m4/profiling.deb.m4
+#
+# Rebuild this file with `make profiling.ubuntu24.regen`
+#
+ARG from=freeradius40x-build/ubuntu24
 FROM ${from}
 
 # Copy profiling profile scripts into the container
-COPY scripts/docker/profiling/profiles/PROFILE_NAME /profile
+COPY scripts/docker/profiling/profiles/default-profiling /profile
 
 RUN /profile/configure.sh
 RUN make
@@ -14,7 +19,7 @@ RUN ln -s /etc/freeradius/radiusd.conf /etc/freeradius/freeradius.conf
 RUN ln -s /etc/freeradius /etc/raddb
 
 WORKDIR /
-COPY scripts/docker/etc/docker-entrypoint.sh.PKG_TYPE docker-entrypoint.sh
+COPY scripts/docker/etc/docker-entrypoint.sh.deb docker-entrypoint.sh
 RUN chmod +x docker-entrypoint.sh
 
 EXPOSE 1812/udp 1813/udp

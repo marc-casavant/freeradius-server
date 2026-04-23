@@ -97,6 +97,7 @@ crossbuild.help: crossbuild.info
 	@echo "    crossbuild.IMAGE.profregen                 - regenerate Dockerfile.prof using default profile ($(PROFILE))"
 	@echo "    crossbuild.IMAGE.profregen PROFILE=<name>  - regenerate using a specific profile"
 	@echo "    crossbuild.IMAGE.profbuild                 - build profiling image using default profile ($(PROFILE))"
+	@echo "    crossbuild.IMAGE.profreset                 - remove profiling stamp and Dockerfile.prof to force rebuild"
 	@echo ""
 	@echo "Available profiling profiles (scripts/docker/profiling/profiles/):"
 	@echo "    profiling1      - callgrind call graph and instruction profiling"
@@ -290,6 +291,15 @@ $(DT)/${1}/Dockerfile.prof: $(DOCKER_TMPL) $(CB_DIR)/m4/profiling.deb.m4 $(CB_DI
 	    -D CB_IMAGE=$(CB_IPREFIX)/${1} \
 	    -D PROFILE_NAME=$(PROFILE) \
 	    $$< > $$@
+
+#
+#  Remove profiling stamp and Dockerfile so next profbuild starts clean
+#
+.PHONY: crossbuild.${1}.profreset
+crossbuild.${1}.profreset:
+	${Q}echo RESET profiling ${1}
+	${Q}rm -f $(DD)/stamp-image.${1}-profbuild
+	${Q}rm -f $(DT)/${1}/Dockerfile.prof
 
 #
 #  Run the build test

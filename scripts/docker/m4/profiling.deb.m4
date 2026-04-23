@@ -8,8 +8,10 @@ RUN /profiling/configure.sh
 RUN make
 RUN make install
 
-# Make sure freeradius can also be used to run server
+# Mirror the package image: both binary names and both config dir paths work
 RUN ln -s /usr/local/sbin/radiusd /usr/local/sbin/freeradius
+RUN ln -s /etc/freeradius/radiusd.conf /etc/freeradius/freeradius.conf
+RUN ln -s /etc/freeradius /etc/raddb
 
 WORKDIR /
 COPY scripts/docker/etc/docker-entrypoint.sh.PKG_TYPE docker-entrypoint.sh

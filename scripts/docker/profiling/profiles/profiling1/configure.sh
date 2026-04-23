@@ -2,6 +2,6 @@
 ./configure \
     --enable-developer \
     --disable-verify-ptr \
-    --sysconfdir=/etc \
+    --with-raddbdir=/etc/freeradius \
     CFLAGS="-g3 -O1 -fno-omit-frame-pointer" \
     LDFLAGS="-fno-omit-frame-pointer"

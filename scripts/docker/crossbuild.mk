@@ -283,7 +283,7 @@ $(DT)/${1}/Dockerfile.cb: $(DOCKER_TMPL) $(CB_DIR)/m4/crossbuild.deb.m4 $(CB_DIR
 .PHONY: crossbuild.${1}.profregen
 crossbuild.${1}.profregen: $(DT)/${1}/Dockerfile.prof
 
-$(DT)/${1}/Dockerfile.prof: $(DOCKER_TMPL) $(CB_DIR)/m4/profiling.deb.m4 $(CB_DIR)/m4/profiling.rpm.m4
+$(DT)/${1}/Dockerfile.prof: $(DOCKER_TMPL) $(CB_DIR)/m4/profiling.deb.m4
 	${Q}echo REGEN ${1}
 	${Q}m4 -I $(CB_DIR)/m4 \
 	    -D D_NAME=${1} \

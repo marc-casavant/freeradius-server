@@ -48,6 +48,25 @@ RUN apt-get update && \
     rm -r /var/lib/apt/lists/*
 
 #
+#  Set up Ubuntu debug symbol repository and install OS library debug symbols.
+#  These allow callgrind/valgrind to resolve system library calls (glibc,
+#  OpenSSL, talloc, etc.) to named symbols instead of hex addresses.
+#
+RUN apt-get update && \
+    apt-get install $APT_OPTS ubuntu-dbgsym-keyring && \
+    printf 'deb http://ddebs.ubuntu.com OS_CODENAME main restricted universe multiverse\ndeb http://ddebs.ubuntu.com OS_CODENAME-updates main restricted universe multiverse\n' \
+        > /etc/apt/sources.list.d/ddebs.list && \
+    apt-get update && \
+    apt-get install $APT_OPTS \
+        libc6-dbg \
+        libssl3t64-dbgsym \
+        libtalloc2-dbgsym \
+        libpcre2-8-0-dbgsym \
+        libsqlite3-0-dbgsym && \
+    apt-get clean && \
+    rm -r /var/lib/apt/lists/*
+
+#
 #  Install FlameGraph scripts
 #
 RUN git clone --depth 1 https://github.com/brendangregg/FlameGraph /opt/flamegraph \

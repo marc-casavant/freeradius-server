@@ -7,11 +7,14 @@
 #
 # Usage:
 #   make -f src/tests/multi-server/all.mk test.multi-server                         # run all tests
-#   make -f src/tests/multi-server/all.mk test.multi-server.5hs-autoaccept.short    # run single test
+#   make -f src/tests/multi-server/all.mk test.multi-server.ci                      # run all ci tests
+#   make -f src/tests/multi-server/all.mk test.multi-server.proxy-accept.short_ci   # run single test
 #   make -f src/tests/multi-server/all.mk clean.test.multi-server                   # clean logs
 #
 
 SHELL := /bin/bash
+
+PROFILE ?= profiling1
 
 #
 #  Allow for stand-alone builds from the local directory.
@@ -139,6 +142,9 @@ TEST_MULTI_SERVER_RENDERED.${1}.${2}     := $$(patsubst $$(DIR)/tests/${1}/%.j2,
 
 $$(foreach j,$$(TEST_MULTI_SERVER_JINJA_FILES.${1}.${2}),$$(eval $$(call TEST_MULTI_SERVER_RENDER,${1},${2},${3},$$j)))
 
+.PHONY: render.test.multi-server.${1}.${2}
+render.test.multi-server.${1}.${2}: $$(TEST_MULTI_SERVER_RENDERED.${1}.${2})
+
 .PHONY: test.multi-server.${1}.${2}
 test.multi-server.${1}.${2}: $$(TEST_MULTI_SERVER_RENDERED.${1}.${2})
 	$$(eval CMD := cd $(TEST_MULTI_SERVER_FRAMEWORK_DIR) && . .venv/bin/activate && DATA_PATH="${4}" python3 -m src.multi_server_test $(TEST_MULTI_SERVER_FLAGS) --project-name "${1}-${2}" --compose "${4}/environment.yml" --test "${4}/template.yml" --use-files --listener-dir "${4}/listener" --log-dir "${4}/logs" --output "${4}/logs/result.log")
@@ -164,7 +170,7 @@ endef
 #  Discovers *.yml param files in the suite directory and generates
 #  render + test targets for each.
 #
-#  ${1} = suite dir name (e.g., 5hs-autoaccept)
+#  ${1} = suite dir name (e.g. proxy-accept)
 #
 define TEST_MULTI_SERVER
 TEST_MULTI_SERVER_PARAM_FILES.${1} := $$(wildcard $$(DIR)/tests/${1}/*.test.yml)
@@ -188,6 +194,8 @@ $(foreach s,$(TEST_MULTI_SERVER_SUITES),$(eval $(call TEST_MULTI_SERVER,$s)))
 
 TEST_MULTI_SERVER_ALL_TESTS := $(foreach s,$(TEST_MULTI_SERVER_SUITES),$(TEST_MULTI_SERVER_TESTS.$(s)))
 
+TEST_MULTI_SERVER_PROF_TESTS := $(foreach s,$(filter prof-%,$(TEST_MULTI_SERVER_SUITES)),$(TEST_MULTI_SERVER_TESTS.$(s)))
+
 ######################################################################
 #
 #  Top-level targets
@@ -207,6 +215,40 @@ TEST_MULTI_SERVER_CI_TESTS := $(filter %_ci,$(TEST_MULTI_SERVER_ALL_TESTS))
 
 .PHONY: test.multi-server.ci
 test.multi-server.ci: $(TEST_MULTI_SERVER_CI_TESTS)
+
+#
+#  Ensure the freeradius-prof image is present before running
+#  any of the profiling tests.
+#
+FREERADIUS_PROF_IMAGE := freeradius4-$(PROFILE)/ubuntu24:latest
+
+.PHONY: freeradius-prof.image
+freeradius-prof.image:
+	${Q}if [ -n "$(FORCE_IMAGE_REBUILD)" ] || [ -z "$$(docker images -q $(FREERADIUS_PROF_IMAGE) 2>/dev/null)" ]; then \
+		$(MAKE) -C $(top_srcdir) docker.ubuntu24.prof; \
+	else \
+		echo "$(FREERADIUS_PROF_IMAGE) available, skipping image creation"; \
+	fi
+	${Q}docker tag $(FREERADIUS_PROF_IMAGE) freeradius-prof:latest
+
+$(TEST_MULTI_SERVER_PROF_TESTS): freeradius-prof.image
+
+#
+#  Ensure the ldap image is present before running prof-ldap tests.
+#  Builds it automatically via docker.openldap.prof if not found.
+#
+OPENLDAP_PROF_IMAGE := freeradius4/openldap-prof:latest
+
+.PHONY: openldap.image
+openldap.image:
+	${Q}if [ -n "$(FORCE_IMAGE_REBUILD)" ] || [ -z "$$(docker images -q $(OPENLDAP_PROF_IMAGE) 2>/dev/null)" ]; then \
+		$(MAKE) -C $(top_srcdir) docker.openldap.prof; \
+	else \
+		echo "$(OPENLDAP_PROF_IMAGE) available, skipping image creation"; \
+	fi
+	${Q}docker tag $(OPENLDAP_PROF_IMAGE) openldap:latest
+
+$(TEST_MULTI_SERVER_TESTS.prof-ldap): openldap.image
 
 .PHONY: clean.test.multi-server
 clean.test.multi-server:

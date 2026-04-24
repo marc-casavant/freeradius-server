@@ -8,7 +8,7 @@ COPY scripts/docker/profiling/profiles/PROFILE_NAME /profile
 #  Install profiling tools
 #
 RUN apt-get update && \
-    apt-get install $APT_OPTS \
+    apt-get install -y $APT_OPTS \
         libgoogle-perftools-dev \
         google-perftools \
         valgrind \
@@ -30,11 +30,11 @@ RUN apt-get update && \
 #  OpenSSL, talloc, etc.) to named symbols instead of hex addresses.
 #
 RUN apt-get update && \
-    apt-get install $APT_OPTS ubuntu-dbgsym-keyring && \
+    apt-get install -y $APT_OPTS ubuntu-dbgsym-keyring && \
     printf 'deb http://ddebs.ubuntu.com OS_CODENAME main restricted universe multiverse\ndeb http://ddebs.ubuntu.com OS_CODENAME-updates main restricted universe multiverse\n' \
         > /etc/apt/sources.list.d/ddebs.list && \
     apt-get update && \
-    apt-get install $APT_OPTS \
+    apt-get install -y $APT_OPTS \
         libc6-dbg \
         libssl3t64-dbgsym \
         libtalloc2-dbgsym \

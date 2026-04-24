@@ -9,6 +9,15 @@ states:
         actions:
         - execute_command:
             command: |
+              cd /srv/freeradius
+              /profile/configure.sh
+              make -j$(nproc)
+              make install
+              ln -sf /usr/local/sbin/radiusd /usr/local/sbin/freeradius
+              ln -sf /etc/freeradius/radiusd.conf /etc/freeradius/freeradius.conf
+              ln -sf /etc/freeradius /etc/raddb
+        - execute_command:
+            command: |
               #
               # proto_load configuration via environment variables
               #

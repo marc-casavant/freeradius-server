@@ -15,14 +15,18 @@ services:
   profiling-server:
     image: freeradius-prof:latest
     volumes:
+    # Mount <freeradius-server-src> directory - needed since we haven't built the server in the image
+    #- .:/user/local/src/repositories/freeradius/
+    #- ${DATA_PATH}/build/:/srv/freeradius/build/
+
     # profiling-server server config
-    - ${DATA_PATH}/freeradius/profiling-server/radiusd.conf:/etc/freeradius/radiusd.conf
+    - ${DATA_PATH}/freeradius/profiling-server/radiusd.conf:/usr/local/src/repositories/freeradius-server/radiusd.conf
     # proto_load packet configuration and statistics output
-    - ${DATA_PATH}/freeradius/profiling-server/proto_load_config.env:/etc/freeradius/proto_load_config.env
-    - ${DATA_PATH}/freeradius/profiling-server/load-generator-packets/:/etc/freeradius/load-generator-packets/
-    - ${DATA_PATH}/freeradius/profiling-server/stats/load-generator-stats.csv:/etc/freeradius/stats/load-generator-stats.csv
+    - ${DATA_PATH}/freeradius/profiling-server/proto_load_config.env:/usr/local/src/repositories/freeradius-server/proto_load_config.env
+    - ${DATA_PATH}/freeradius/profiling-server/load-generator-packets/:/usr/local/src/repositories/freeradius-server/load-generator-packets/
+    - ${DATA_PATH}/freeradius/profiling-server/stats/load-generator-stats.csv:/usr/local/src/repositories/freeradius-server/stats/load-generator-stats.csv
     # Profiling results directory
-    - ${DATA_PATH}/prof-results/:/etc/prof-results/
+    - ${DATA_PATH}/prof-results/:/user/local/src/repositories/prof-results/
     # Listener directory
     - ${LISTENER_DIR}/:/var/run/multi-server/
     entrypoint:

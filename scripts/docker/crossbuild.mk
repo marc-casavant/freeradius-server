@@ -102,7 +102,7 @@ crossbuild.help: crossbuild.info
 	@echo "    crossbuild.IMAGE.profile.regen                 - regenerate Dockerfile.prof using default profile ($(PROFILE))"
 	@echo "    crossbuild.IMAGE.profile.regen PROFILE=<name>  - regenerate using a specific profile"
 	@echo "    crossbuild.IMAGE.profile.build                 - build profiling image using default profile ($(PROFILE))"
-	@echo "    crossbuild.IMAGE.profile.reset                 - remove profiling stamp and Dockerfile.prof to force rebuild"
+	@echo "    crossbuild.IMAGE.profile.reset                 - remove profiling stamp to force rebuild"
 	@echo ""
 	@echo "Use 'make NOCACHE=1 ...' to disregard the Docker cache on build"
 
@@ -158,15 +158,15 @@ $(DD)/stamp-image.${1}:
 #  Build the profiling image
 #
 .PHONY: crossbuild.${1}.profile.build
-crossbuild.${1}.profile.build: $(DD)/stamp-image.${1}-profbuild
+crossbuild.${1}.profile.build: $(DD)/stamp-image.${1}-profile.build
 
-$(DD)/stamp-image.${1}-profbuild: $(DT)/${1}/Dockerfile.prof
-	${Q}echo "BUILD ${1} (freeradius4-$(PROFILE)/${1}) > $(DD)/build.${1}-profbuild"
+$(DD)/stamp-image.${1}-profile.build: $(DT)/${1}/Dockerfile.prof
+	${Q}echo "BUILD ${1} (freeradius4-$(PROFILE)/${1}) > $(DD)/build.${1}-profile.build"
 	${Q}docker build $(DOCKER_BUILD_OPTS) . \
 		-f $(DT)/${1}/Dockerfile.prof \
 		-t freeradius4-$(PROFILE)/${1} \
-		>$(DD)/build.${1}-profbuild 2>&1
-	${Q}touch $(DD)/stamp-image.${1}-profbuild
+		>$(DD)/build.${1}-profile.build 2>&1
+	${Q}touch $(DD)/stamp-image.${1}-profile.build
 
 #
 #  Start up the docker container
@@ -293,13 +293,12 @@ $(DT)/${1}/Dockerfile.prof: $(DOCKER_TMPL) $(CB_DIR)/m4/profiling.deb.m4
 	    $$< > $$@
 
 #
-#  Remove profiling stamp and Dockerfile so next profbuild starts clean
+#  Remove profiling stamp so next profile.build starts clean
 #
 .PHONY: crossbuild.${1}.profile.reset
 crossbuild.${1}.profile.reset:
 	${Q}echo RESET profiling ${1}
-	${Q}rm -f $(DD)/stamp-image.${1}-profbuild
-	${Q}rm -f $(DT)/${1}/Dockerfile.prof
+	${Q}rm -f $(DD)/stamp-image.${1}-profile.build
 
 #
 #  Run the build test

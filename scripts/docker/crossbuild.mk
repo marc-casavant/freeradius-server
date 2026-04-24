@@ -99,10 +99,10 @@ crossbuild.help: crossbuild.info
 	@echo "    crossbuild.IMAGE.wipe    - remove Docker image"
 	@echo ""
 	@echo "Profiling targets:"
-	@echo "    crossbuild.IMAGE.profregen                 - regenerate Dockerfile.prof using default profile ($(PROFILE))"
-	@echo "    crossbuild.IMAGE.profregen PROFILE=<name>  - regenerate using a specific profile"
-	@echo "    crossbuild.IMAGE.profbuild                 - build profiling image using default profile ($(PROFILE))"
-	@echo "    crossbuild.IMAGE.profreset                 - remove profiling stamp and Dockerfile.prof to force rebuild"
+	@echo "    crossbuild.IMAGE.profile.regen                 - regenerate Dockerfile.prof using default profile ($(PROFILE))"
+	@echo "    crossbuild.IMAGE.profile.regen PROFILE=<name>  - regenerate using a specific profile"
+	@echo "    crossbuild.IMAGE.profile.build                 - build profiling image using default profile ($(PROFILE))"
+	@echo "    crossbuild.IMAGE.profile.reset                 - remove profiling stamp and Dockerfile.prof to force rebuild"
 	@echo ""
 	@echo "Use 'make NOCACHE=1 ...' to disregard the Docker cache on build"
 
@@ -157,8 +157,8 @@ $(DD)/stamp-image.${1}:
 #
 #  Build the profiling image
 #
-.PHONY: crossbuild.${1}.profbuild
-crossbuild.${1}.profbuild: $(DD)/stamp-image.${1}-profbuild
+.PHONY: crossbuild.${1}.profile.build
+crossbuild.${1}.profile.build: $(DD)/stamp-image.${1}-profbuild
 
 $(DD)/stamp-image.${1}-profbuild: $(DT)/${1}/Dockerfile.prof
 	${Q}echo "BUILD ${1} (freeradius4-$(PROFILE)/${1}) > $(DD)/build.${1}-profbuild"
@@ -280,8 +280,8 @@ $(DT)/${1}/Dockerfile.cb: $(DOCKER_TMPL) $(CB_DIR)/m4/crossbuild.deb.m4 $(CB_DIR
 #
 #  Regenerate Dockerfile.prof from m4 template
 #
-.PHONY: crossbuild.${1}.profregen
-crossbuild.${1}.profregen: $(DT)/${1}/Dockerfile.prof
+.PHONY: crossbuild.${1}.profile.regen
+crossbuild.${1}.profile.regen: $(DT)/${1}/Dockerfile.prof
 
 $(DT)/${1}/Dockerfile.prof: $(DOCKER_TMPL) $(CB_DIR)/m4/profiling.deb.m4
 	${Q}echo REGEN ${1}
@@ -295,8 +295,8 @@ $(DT)/${1}/Dockerfile.prof: $(DOCKER_TMPL) $(CB_DIR)/m4/profiling.deb.m4
 #
 #  Remove profiling stamp and Dockerfile so next profbuild starts clean
 #
-.PHONY: crossbuild.${1}.profreset
-crossbuild.${1}.profreset:
+.PHONY: crossbuild.${1}.profile.reset
+crossbuild.${1}.profile.reset:
 	${Q}echo RESET profiling ${1}
 	${Q}rm -f $(DD)/stamp-image.${1}-profbuild
 	${Q}rm -f $(DT)/${1}/Dockerfile.prof

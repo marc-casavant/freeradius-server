@@ -193,7 +193,18 @@ server load-generator {
 			Status-Server-Message := "requests processed successfully"
 		}
 
-		%linelog_test_framework("load-generator-status-server {\"Status-Server-Result\": %json.quote(%{Status-Server-Result}), \"Status-Server-Message\": %json.quote(%{Status-Server-Message}), \"Status-Server-Counter\": %{Status-Server-Counter}, \"Access-Request-Counter\": %{Access-Request-Counter}, \"Access-Accept-Counter\": %{Access-Accept-Counter}, \"Access-Reject-Counter\": %{Access-Reject-Counter}}")
+		%linelog_test_framework("{\
+					\"source\": \"load-generator\", \
+					\"trigger\": \"load-generator-status-server\", \
+					\"msg\": { \
+						\"Status-Server-Result\": %json.quote(%{Status-Server-Result}), \
+						\"Status-Server-Message\": %json.quote(%{Status-Server-Message}), \
+						\"Status-Server-Counter\": \"%{Status-Server-Counter}\", \
+						\"Access-Request-Counter\": \"%{Access-Request-Counter}\", \
+						\"Access-Accept-Counter\": \"%{Access-Accept-Counter}\", \
+						\"Access-Reject-Counter\": \"%{Access-Reject-Counter}\" \
+					} \
+				}")
 
 		{%endraw%}
 	}

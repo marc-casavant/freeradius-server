@@ -51,15 +51,12 @@ states:
     verify:
       timeout: 5
       trigger_mode: unordered
-      triggers:
-      - load-generator-status-server:
-          json:
-            Status-Server-Result:
-              pattern:
-                reg_pattern: PASS
-            Access-Request-Counter:
-              pattern:
-                reg_pattern: (\d+)
-            Access-Accept-Counter:
-              pattern:
-                reg_pattern: (\d+)
+      checks:
+      - check_status_server:
+          qualifiers:
+            source: load-generator
+            trigger: load-generator-status-server
+          validations:
+            msg.Status-Server-Result: PASS
+            msg.Access-Request-Counter: (\d+)
+            msg.Access-Accept-Counter: (\d+)

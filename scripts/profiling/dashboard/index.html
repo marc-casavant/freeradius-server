@@ -725,6 +725,14 @@ table.runs td.when { color: var(--ink-3); }
   <div class="suite-bar">
     <span>Test suite</span>
     <div class="suite-pills" id="suite-pills"></div>
+    <div style="margin-left:auto;display:flex;align-items:center;gap:8px;">
+      <span>Change severity</span>
+      <span class="flag-pill ok"      title="Delta &lt; 0.3 pp — consistent across runs">stable</span>
+      <span class="flag-pill ok"      title="Delta ≤ 0.5 pp — within noise floor">ok</span>
+      <span class="flag-pill info"    title="Delta 0.5–1.0 pp — minor change">info</span>
+      <span class="flag-pill warning" title="Delta &gt; 1.0 pp — notable regression or improvement">noisy</span>
+      <span class="flag-pill critical" title="Delta &gt; 1.0 pp — large regression, CI-flagged">critical</span>
+    </div>
   </div>
 
   <nav class="tabs" role="tablist" aria-label="Dashboard views" style="margin-top:14px;">
@@ -763,9 +771,9 @@ table.runs td.when { color: var(--ink-3); }
   <section class="view" id="view-compare" role="tabpanel">
 
     <div class="filterbar">
-      <div class="zoom" id="zoom-switcher" role="group" aria-label="Zoom level">
-        <button data-level="run"    aria-pressed="true">Run</button>
-        <button data-level="module" aria-pressed="false">Module</button>
+      <div class="zoom" id="zoom-switcher" role="group" aria-label="Zoom level" style="flex-basis:100%;">
+        <button data-level="run"    aria-pressed="true">Run Divergence Graph</button>
+        <button data-level="module" aria-pressed="false">Module Divergence Graph</button>
         <button data-level="function" aria-pressed="false" id="zoom-fn-btn" style="display:none;">Function</button>
       </div>
       <label>Current run
@@ -775,7 +783,7 @@ table.runs td.when { color: var(--ink-3); }
         <select id="baseline-select"></select>
       </label>
       <label>Cutoff
-        <input type="number" id="cutoff-input" min="0" max="10" step="0.01" value="0.02" style="width:5em;">
+        <input type="number" id="cutoff-input" min="0" max="10" step="0.001" value="0.000" style="width:5em;">
         <span style="color:var(--ink-3);font-size:0.82em;">pp</span>
       </label>
     </div>
@@ -1061,8 +1069,8 @@ const fmt = {
     if (n >= 1e6) return (n / 1e6).toFixed(1) + "M";
     return String(n);
   },
-  pct:  function(n, d) { d = (d === undefined) ? 2 : d; return n.toFixed(d) + "%"; },
-  pp:   function(n, d) { d = (d === undefined) ? 2 : d; return (n >= 0 ? "+" : "") + n.toFixed(d) + "pp"; },
+  pct:  function(n, d) { d = (d === undefined) ? 3 : d; return n.toFixed(d) + "%"; },
+  pp:   function(n, d) { d = (d === undefined) ? 3 : d; return (n >= 0 ? "+" : "") + n.toFixed(d) + "pp"; },
   when: function(s) {
     if (!s) return "—";
     const m = s.match(/(\w+ \w+\s+\d+ \d+:\d+:\d+) UTC (\d+)/);
@@ -1132,6 +1140,17 @@ function setSuite(suite) {
   state.currentRunIdx  = currentRuns().length - 1;
   state.baselineRunIdx = 0;
   state.drillFn = null;
+  if (state.zoom === "function") {
+    state.zoom = "run";
+    document.querySelectorAll("#zoom-switcher button").forEach(function(b) {
+      b.setAttribute("aria-pressed", b.dataset.level === "run" ? "true" : "false");
+    });
+    document.getElementById("zoom-fn-btn").style.display   = "none";
+    document.getElementById("drill-crumbs").style.display  = "none";
+    document.getElementById("zoom-run").style.display      = "";
+    document.getElementById("zoom-module").style.display   = "none";
+    document.getElementById("zoom-function").style.display = "none";
+  }
   document.querySelectorAll(".suite-pill").forEach(function(btn) {
     btn.classList.toggle("active", btn.dataset.suite === suite);
   });
@@ -1353,7 +1372,7 @@ function renderRunZoom() {
   const top25 = meaningful.slice(0, 25);
 
   document.getElementById("cutoff-hint").textContent =
-    "— self IR % change, current run vs. baseline; " + cutoff.toFixed(2) + " pp cutoff";
+    "— self IR % change, current run vs. baseline; " + cutoff.toFixed(3) + " pp cutoff";
 
   drawDivergingChart("diverge-chart-fn", top25, {
     labelFor: function(r) { return r.name; },
@@ -1363,7 +1382,7 @@ function renderRunZoom() {
 
   const filteredOut = allRows.length - meaningful.length;
   document.getElementById("diverge-footnote-fn").innerHTML =
-    "Showing " + top25.length + " of " + meaningful.length + " functions above the " + cutoff.toFixed(2) + "&thinsp;pp cutoff (" + filteredOut + " smaller changes hidden). " +
+    "Showing " + top25.length + " of " + meaningful.length + " functions above the " + cutoff.toFixed(3) + "&thinsp;pp cutoff (" + filteredOut + " smaller changes hidden). " +
     allRows.filter(function(r) { return r.delta > 0; }).length + " increased, " +
     allRows.filter(function(r) { return r.delta < 0; }).length + " decreased across " + allRows.length + " profiled functions.";
 
@@ -1371,21 +1390,22 @@ function renderRunZoom() {
   const tbody = document.querySelector("#changes-table tbody");
   tbody.innerHTML = "";
   if (top25.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--ink-3);padding:24px;font-style:italic;font-family:var(--serif);">No changes above the ' + cutoff.toFixed(2) + ' pp cutoff — runs are very stable.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--ink-3);padding:24px;font-style:italic;font-family:var(--serif);">No changes above the ' + cutoff.toFixed(3) + ' pp cutoff — runs are very stable.</td></tr>';
     return;
   }
   top25.forEach(function(r) {
     const status = Math.abs(r.delta) > 1.0 ? "warning" : (Math.abs(r.delta) > 0.5 ? "info" : "ok");
+    const statusLabel = status === "warning" ? "noisy" : status;
     const tr = document.createElement("tr");
     tr.classList.add(r.delta > 0 ? "dir-up" : "dir-down");
     tr.innerHTML =
       '<td class="dir-marker">' + (r.delta > 0 ? "▲" : "▼") + '</td>' +
       '<td class="fn"><a class="fn-link" data-fn="' + escapeHtml(r.name) + '">' +
         '<span class="module-pre">' + escapeHtml(r.module) + '::</span>' + escapeHtml(r.name) + '</a></td>' +
-      '<td class="num">' + r.current.toFixed(2) + '%</td>' +
-      '<td class="num">' + r.baseline.toFixed(2) + '%</td>' +
+      '<td class="num">' + r.current.toFixed(3) + '%</td>' +
+      '<td class="num">' + r.baseline.toFixed(3) + '%</td>' +
       '<td class="num delta ' + (r.delta > 0 ? 'up' : 'down') + '">' + fmt.pp(r.delta) + '</td>' +
-      '<td><span class="flag-pill ' + status + '">' + status + '</span></td>';
+      '<td><span class="flag-pill ' + status + '">' + statusLabel + '</span></td>';
     tbody.appendChild(tr);
   });
   tbody.querySelectorAll(".fn-link").forEach(function(a) {
@@ -1427,7 +1447,7 @@ function renderModuleZoom() {
   const cutoffMod = getCutoff();
   const moved = rows.filter(function(r) { return Math.abs(r.delta) >= cutoffMod; }).length;
   document.getElementById("diverge-footnote-mod").innerHTML =
-    rows.length + " modules in profile. " + moved + " moved by ≥" + cutoffMod.toFixed(2) + "&thinsp;pp.";
+    rows.length + " modules in profile. " + moved + " moved by ≥" + cutoffMod.toFixed(3) + "&thinsp;pp.";
 
   const tbody = document.querySelector("#modules-table tbody");
   tbody.innerHTML = "";
@@ -1438,7 +1458,7 @@ function renderModuleZoom() {
     tr.innerHTML =
       '<td class="dir-marker">' + dir + '</td>' +
       '<td class="fn">' + escapeHtml(r.module) + ' <span class="module-pre">(' + r.fn_count + ' fns)</span></td>' +
-      '<td class="num">' + r.current.toFixed(2) + '%</td>' +
+      '<td class="num">' + r.current.toFixed(3) + '%</td>' +
       '<td class="num delta ' + (r.delta > 0 ? 'up' : (r.delta < 0 ? 'down' : 'flat')) + '">' + fmt.pp(r.delta) + '</td>' +
       '<td class="num">' + r.fn_count + '</td>';
     tbody.appendChild(tr);
@@ -1612,7 +1632,7 @@ function drawDivergingChart(containerId, rows, opts) {
   for (let i = -tickCount; i <= tickCount; i++) {
     const x = cx + i * tickStep * scale;
     const v = i * tickStep;
-    svg.push('<text class="div-axis-label" x="' + x + '" y="' + (headerH - 8) + '">' + (v > 0 ? "+" : "") + v.toFixed(2) + 'pp</text>');
+    svg.push('<text class="div-axis-label" x="' + x + '" y="' + (headerH - 8) + '">' + (v > 0 ? "+" : "") + v.toFixed(3) + 'pp</text>');
   }
   svg.push('<line class="div-axis-zero" x1="' + cx + '" x2="' + cx + '" y1="' + (headerH - 4) + '" y2="' + (headerH + rows.length * rowH) + '" />');
   svg.push('</g>');
@@ -1643,11 +1663,11 @@ function drawDivergingChart(containerId, rows, opts) {
 
     const valX = isRegress ? (x + w + 8) : (x - 8);
     const valAnchor = isRegress ? "start" : "end";
-    svg.push('<text class="div-value ' + barCls + '" x="' + valX + '" y="' + (y + rowH / 2 + 4) + '" text-anchor="' + valAnchor + '">' + (isRegress ? "+" : "") + r.delta.toFixed(2) + 'pp</text>');
+    svg.push('<text class="div-value ' + barCls + '" x="' + valX + '" y="' + (y + rowH / 2 + 4) + '" text-anchor="' + valAnchor + '">' + (isRegress ? "+" : "") + r.delta.toFixed(3) + 'pp</text>');
 
     const innerX = isRegress ? (cx - 5) : (cx + 5);
     const innerAnchor = isRegress ? "end" : "start";
-    svg.push('<text x="' + innerX + '" y="' + (y + rowH / 2 + 4) + '" text-anchor="' + innerAnchor + '" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="10" fill="var(--ink-4)">' + r.current.toFixed(2) + '% &#x2190; ' + r.baseline.toFixed(2) + '%</text>');
+    svg.push('<text x="' + innerX + '" y="' + (y + rowH / 2 + 4) + '" text-anchor="' + innerAnchor + '" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="10" fill="var(--ink-4)">' + r.current.toFixed(3) + '% &#x2190; ' + r.baseline.toFixed(3) + '%</text>');
 
     svg.push('</g>');
   });

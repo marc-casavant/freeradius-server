@@ -702,6 +702,748 @@ table.runs td.when { color: var(--ink-3); }
   .drill-header { grid-template-columns: 1fr; }
   .drill-header .fn-stats { justify-content: flex-start; }
 }
+
+/* ============================================================
+   HOTSPOTS view — bulletin, suite strip, card feed, modal
+   ============================================================ */
+:root {
+  --regress-tint: rgba(184, 51, 28, 0.08);
+  --warn-tint:    rgba(184, 132, 58, 0.10);
+  --info-tint:    rgba(31, 73, 119, 0.08);
+}
+
+/* Hero bulletin */
+.bulletin {
+  border: 1px solid var(--brand-800);
+  background: var(--paper);
+  padding: 20px 24px 22px;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 24px;
+  margin: 6px 0 28px;
+  position: relative;
+}
+.bulletin::before {
+  content: "";
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  width: 6px;
+  background: var(--regress);
+}
+.bulletin.calm::before { background: var(--improve); }
+.bulletin.calm { border-color: var(--brand-300); }
+.bulletin .kicker {
+  font-family: var(--mono);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--ink-3);
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.bulletin .kicker .dot {
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  background: var(--regress);
+  display: inline-block;
+  box-shadow: 0 0 0 4px rgba(184,51,28,0.18);
+  animation: pulse 2.4s ease-in-out infinite;
+}
+.bulletin.calm .kicker .dot {
+  background: var(--improve);
+  box-shadow: 0 0 0 4px rgba(31,107,90,0.16);
+  animation: none;
+}
+@keyframes pulse {
+  0%, 100% { box-shadow: 0 0 0 4px rgba(184,51,28,0.18); }
+  50%      { box-shadow: 0 0 0 9px rgba(184,51,28,0.04); }
+}
+.bulletin .headline {
+  font-family: var(--display);
+  font-size: 38px;
+  line-height: 1.1;
+  color: var(--brand-900);
+  margin-top: 10px;
+  letter-spacing: 0.01em;
+}
+.bulletin .headline .num { color: var(--regress); }
+.bulletin.calm .headline .num { color: var(--improve); }
+.bulletin .lede {
+  font-family: var(--serif);
+  font-style: italic;
+  font-size: 14px;
+  color: var(--ink-2);
+  margin-top: 18px;
+  max-width: 56ch;
+  line-height: 1.5;
+}
+.bulletin .lede strong {
+  font-style: normal;
+  color: var(--brand-800);
+}
+.bulletin .breakdown {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: flex-end;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--ink-3);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  min-width: 220px;
+  border-left: 1px solid var(--rule);
+  padding-left: 22px;
+  align-self: stretch;
+}
+.bulletin .breakdown .row {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  width: 100%;
+  justify-content: space-between;
+}
+.bulletin .breakdown .row .v {
+  font-family: var(--mono);
+  font-size: 22px;
+  color: var(--brand-800);
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+.bulletin .breakdown .row .v.crit  { color: var(--regress); }
+.bulletin .breakdown .row .v.noisy { color: var(--warn); }
+.bulletin .breakdown .row .v.info  { color: var(--info); }
+.bulletin .breakdown .scan {
+  text-transform: none;
+  letter-spacing: 0;
+  font-style: italic;
+  font-family: var(--serif);
+  color: var(--ink-4);
+  margin-top: auto;
+  padding-top: 10px;
+  font-size: 11px;
+  text-align: right;
+  max-width: 28ch;
+}
+
+/* Suite health strip */
+.suite-strip {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 0;
+  border: 1px solid var(--rule);
+  background: var(--paper);
+}
+.suite-card {
+  padding: 16px 18px 14px;
+  border-right: 1px solid var(--rule);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  cursor: pointer;
+  transition: background 100ms ease;
+}
+.suite-card:last-child { border-right: none; }
+.suite-card:hover { background: var(--paper-2); }
+.suite-card.has-crit { background: linear-gradient(to bottom, rgba(184,51,28,0.045), transparent 40%); }
+.suite-card.has-crit:hover { background: linear-gradient(to bottom, rgba(184,51,28,0.07), var(--paper-2)); }
+.suite-card .hdr {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+.suite-card .name {
+  font-family: var(--display);
+  font-size: 20px;
+  letter-spacing: 0.04em;
+  color: var(--brand-900);
+  line-height: 1;
+  white-space: nowrap;
+}
+.suite-card .badges { display: inline-flex; gap: 4px; flex-wrap: wrap; justify-content: flex-end; }
+.suite-card .stats {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 4px 12px;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--ink-3);
+  font-variant-numeric: tabular-nums;
+}
+.suite-card .stats .k { text-transform: uppercase; letter-spacing: 0.06em; font-size: 10px; color: var(--ink-4); }
+.suite-card .stats .v { color: var(--ink-2); text-align: right; }
+.suite-card .stats .v.regress { color: var(--regress); }
+.suite-card .stats .v.improve { color: var(--improve); }
+.suite-card .spark-wrap { margin-top: 4px; }
+.suite-card .spark-wrap svg { display: block; width: 100%; height: 30px; }
+
+/* Filters under section labels */
+.hs-filters {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  flex-wrap: wrap;
+  padding: 6px 0 18px;
+  border-bottom: 1px solid var(--rule-soft);
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--ink-3);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+.hs-filters .group { display: inline-flex; align-items: center; gap: 8px; }
+.chip-group {
+  display: inline-flex;
+  border: 1px solid var(--brand-300);
+  background: var(--paper);
+}
+.chip-group button {
+  font-family: var(--mono);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  background: none;
+  border: none;
+  border-right: 1px solid var(--brand-200);
+  padding: 5px 10px;
+  cursor: pointer;
+  color: var(--ink-3);
+  transition: color 100ms, background 100ms;
+}
+.chip-group button:last-child { border-right: none; }
+.chip-group button:hover { background: var(--paper-2); color: var(--brand-800); }
+.chip-group button[aria-pressed="true"] { background: var(--brand-800); color: white; }
+.chip-group button .n {
+  display: inline-block;
+  margin-left: 5px;
+  font-size: 9px;
+  color: var(--ink-4);
+}
+.chip-group button[aria-pressed="true"] .n { color: rgba(255,255,255,0.65); }
+.hs-filters select {
+  font-family: var(--mono);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  background: var(--paper);
+  border: 1px solid var(--brand-300);
+  padding: 4px 6px;
+  color: var(--ink);
+}
+.hs-filters .right {
+  margin-left: auto;
+  font-style: italic;
+  font-family: var(--serif);
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 12px;
+  color: var(--ink-4);
+}
+
+/* Hotspot feed cards */
+#hotspot-feed { display: flex; flex-direction: column; gap: 12px; padding-top: 18px; }
+.hotspot {
+  display: grid;
+  grid-template-columns: 6px minmax(380px, 1.4fr) minmax(260px, 1fr) auto;
+  background: var(--paper);
+  border: 1px solid var(--rule);
+  cursor: pointer;
+  transition: box-shadow 120ms ease, border-color 120ms ease;
+}
+.hotspot:hover {
+  border-color: var(--brand-700);
+  box-shadow: 0 1px 0 var(--brand-700);
+}
+.hotspot .stripe { background: var(--neutral); }
+.hotspot.sev-critical .stripe { background: var(--regress); }
+.hotspot.sev-noisy    .stripe { background: var(--warn); }
+.hotspot.sev-info     .stripe { background: var(--info); }
+.hotspot.sev-volatile .stripe { background: var(--brand-500); }
+.hotspot.sev-improve  .stripe { background: var(--improve); }
+.hotspot .body {
+  padding: 14px 18px 16px;
+  border-right: 1px solid var(--rule-soft);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+.hotspot .top-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.hotspot .suite-badge {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  background: var(--paper-3);
+  color: var(--ink-2);
+  padding: 2px 7px;
+  border-radius: 2px;
+  font-weight: 500;
+}
+.hotspot .category {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  border-left: 1px solid var(--rule);
+  padding-left: 8px;
+}
+.hotspot .fn-name {
+  font-family: var(--mono);
+  font-size: 16px;
+  color: var(--brand-900);
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  word-break: break-all;
+  line-height: 1.25;
+  margin-top: 2px;
+}
+.hotspot .fn-name .mod { color: var(--ink-3); font-weight: 400; }
+.hotspot .lede {
+  font-family: var(--serif);
+  font-style: italic;
+  font-size: 13px;
+  color: var(--ink-2);
+  line-height: 1.5;
+  margin-top: 2px;
+}
+.hotspot .lede .delta {
+  font-family: var(--mono);
+  font-style: normal;
+  font-variant-numeric: tabular-nums;
+  color: var(--regress);
+  font-weight: 500;
+}
+.hotspot .lede .sig {
+  font-family: var(--mono);
+  font-style: normal;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-3);
+  font-size: 11px;
+  margin-left: 6px;
+}
+.hotspot .foot {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--ink-3);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-top: 6px;
+  font-variant-numeric: tabular-nums;
+}
+.hotspot .foot .sep { color: var(--ink-4); margin: 0 8px; }
+.hotspot .trend {
+  padding: 14px 18px;
+  border-right: 1px solid var(--rule-soft);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.hotspot .trend .label {
+  font-family: var(--mono);
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--ink-4);
+  display: flex;
+  justify-content: space-between;
+}
+.hotspot .trend svg { display: block; width: 100%; height: 60px; }
+.hotspot .trend .scale {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--ink-4);
+  font-variant-numeric: tabular-nums;
+  display: flex;
+  justify-content: space-between;
+}
+.hotspot .action {
+  padding: 14px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: flex-end;
+  justify-content: space-between;
+  min-width: 175px;
+}
+.hotspot .metrics {
+  text-align: right;
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+}
+.hotspot .metrics .big {
+  font-size: 22px;
+  color: var(--brand-900);
+  line-height: 1;
+  font-weight: 500;
+}
+.hotspot .metrics .big.regress { color: var(--regress); }
+.hotspot .metrics .big.improve { color: var(--improve); }
+.hotspot .metrics .sub {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--ink-4);
+  margin-top: 4px;
+}
+.hotspot .investigate {
+  font-family: var(--display);
+  font-size: 13px;
+  letter-spacing: 0.08em;
+  background: var(--brand-800);
+  color: white;
+  border: none;
+  padding: 7px 12px;
+  cursor: pointer;
+  text-transform: uppercase;
+  transition: background 120ms ease;
+}
+.hotspot .investigate:hover { background: var(--brand-900); }
+
+/* Empty state for the feed */
+.empty-state {
+  padding: 64px 32px;
+  text-align: center;
+  font-family: var(--serif);
+  font-style: italic;
+  color: var(--ink-3);
+  background: var(--paper);
+  border: 1px solid var(--rule-soft);
+}
+.empty-state .glyph {
+  font-family: var(--display);
+  font-size: 80px;
+  color: var(--brand-200);
+  line-height: 1;
+  letter-spacing: 0;
+  margin-bottom: 8px;
+}
+
+/* Module shifts (paired tables under the feed) */
+.mod-shifts {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 24px;
+  margin-top: 28px;
+}
+.mod-shifts .col {
+  border: 1px solid var(--rule);
+  background: var(--paper);
+}
+.mod-shifts .col-head {
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--rule);
+  background: var(--paper-2);
+  font-family: var(--mono);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--brand-800);
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+}
+.mod-shifts .col-head .hint {
+  color: var(--ink-4);
+  text-transform: none;
+  letter-spacing: 0;
+  font-family: var(--serif);
+  font-style: italic;
+  font-size: 11px;
+  font-weight: 400;
+}
+.mod-shifts table {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: var(--mono);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.mod-shifts td {
+  padding: 7px 14px;
+  border-bottom: 1px solid var(--rule-soft);
+}
+.mod-shifts tr:last-child td { border-bottom: none; }
+.mod-shifts td.num { text-align: right; }
+.mod-shifts td .module { color: var(--ink); font-weight: 500; }
+.mod-shifts td .suite-tag {
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-4);
+  margin-left: 8px;
+}
+.mod-shifts td.num.regress { color: var(--regress); }
+.mod-shifts td.num.improve { color: var(--improve); }
+
+/* Investigate detail modal */
+.modal-overlay {
+  position: fixed; inset: 0;
+  background: rgba(0,26,51,0.55);
+  z-index: 100;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding: 40px;
+}
+.modal-overlay.open { display: flex; }
+.modal {
+  background: var(--paper);
+  border: 1px solid var(--brand-800);
+  max-width: 720px;
+  width: 100%;
+  max-height: 86vh;
+  overflow: auto;
+  border-top: 4px solid var(--regress);
+  font-family: var(--sans);
+}
+.modal .head {
+  padding: 18px 24px 14px;
+  border-bottom: 1px solid var(--rule);
+}
+.modal .kicker {
+  font-family: var(--mono);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--ink-3);
+}
+.modal .title {
+  font-family: var(--mono);
+  font-size: 18px;
+  color: var(--brand-900);
+  margin-top: 5px;
+  word-break: break-all;
+}
+.modal .title .mod { color: var(--ink-3); font-weight: 400; }
+.modal .body { padding: 18px 24px 22px; }
+.modal .sect {
+  font-family: var(--display);
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--ink-3);
+  margin: 16px 0 8px;
+}
+.modal .sect:first-child { margin-top: 0; }
+.modal .grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  border: 1px solid var(--rule);
+  background: var(--paper-2);
+  margin-top: 4px;
+}
+.modal .grid .cell {
+  padding: 12px 14px;
+  border-right: 1px solid var(--rule);
+}
+.modal .grid .cell:last-child { border-right: none; }
+.modal .grid .k {
+  font-family: var(--mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--ink-3);
+}
+.modal .grid .v {
+  font-family: var(--mono);
+  font-size: 18px;
+  color: var(--brand-900);
+  margin-top: 4px;
+  font-variant-numeric: tabular-nums;
+}
+.modal .grid .v.regress { color: var(--regress); }
+.modal .actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 14px 24px;
+  border-top: 1px solid var(--rule);
+  background: var(--paper-2);
+}
+.modal .btn {
+  font-family: var(--display);
+  font-size: 13px;
+  letter-spacing: 0.08em;
+  padding: 8px 14px;
+  text-transform: uppercase;
+  border: 1px solid var(--brand-800);
+  background: var(--paper);
+  color: var(--brand-800);
+  cursor: pointer;
+}
+.modal .btn.primary { background: var(--brand-800); color: white; }
+.modal .btn:hover { background: var(--brand-900); color: white; }
+.modal .timeline {
+  font-family: var(--mono);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  border: 1px solid var(--rule-soft);
+}
+.modal .timeline .row {
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--rule-soft);
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 12px;
+  align-items: center;
+}
+.modal .timeline .row:last-child { border-bottom: none; }
+.modal .timeline .row .sha { color: var(--brand-700); }
+.modal .timeline .row .ts  { color: var(--ink-3); font-size: 11px; }
+.modal .timeline .row .v   { color: var(--ink); }
+.modal .timeline .row.flag-row { background: var(--regress-tint); }
+.modal .timeline .row.flag-row .v { color: var(--regress); font-weight: 500; }
+.modal .timeline .row.curr { background: var(--paper-3); }
+
+/* Responsive collapse for narrow viewports */
+@media (max-width: 1100px) {
+  .bulletin { grid-template-columns: 1fr; }
+  .bulletin .breakdown {
+    border-left: none;
+    border-top: 1px solid var(--rule);
+    padding-left: 0;
+    padding-top: 14px;
+    align-items: flex-start;
+  }
+  .suite-strip { grid-template-columns: repeat(2, 1fr); }
+  .suite-card:nth-child(2) { border-right: none; }
+  .suite-card:nth-child(1), .suite-card:nth-child(2) {
+    border-bottom: 1px solid var(--rule);
+  }
+  .mod-shifts { grid-template-columns: 1fr; }
+  .hotspot { grid-template-columns: 6px 1fr; }
+  .hotspot .trend {
+    border-right: none;
+    border-top: 1px solid var(--rule-soft);
+    grid-column: 2;
+  }
+  .hotspot .action {
+    grid-column: 2;
+    align-items: stretch;
+    border-top: 1px solid var(--rule-soft);
+    flex-direction: row;
+  }
+}
+/* Detection settings panel — opens from the filter bar */
+.hs-settings-toggle {
+  margin-left: 8px;
+  font-family: var(--display);
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  background: var(--paper);
+  border: 1px solid var(--brand-300);
+  color: var(--brand-700);
+  padding: 5px 10px;
+  cursor: pointer;
+  transition: all 100ms ease;
+}
+.hs-settings-toggle:hover { background: var(--paper-2); border-color: var(--brand-700); }
+.hs-settings-toggle[aria-expanded="true"] {
+  background: var(--brand-800);
+  color: white;
+  border-color: var(--brand-800);
+}
+.hs-settings {
+  display: none;
+  background: var(--paper);
+  border: 1px solid var(--brand-300);
+  border-top: 3px solid var(--brand-700);
+  padding: 18px 22px 14px;
+  margin: 0 0 18px;
+  font-family: var(--sans);
+}
+.hs-settings.open { display: block; }
+.hs-settings .row {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 18px;
+  margin-bottom: 14px;
+}
+.hs-settings .row:last-of-type { margin-bottom: 6px; }
+.hs-settings .field { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.hs-settings .field label {
+  font-family: var(--mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--ink-3);
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+}
+.hs-settings .field label .v {
+  font-family: var(--mono);
+  color: var(--brand-800);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  text-transform: none;
+  letter-spacing: 0;
+}
+.hs-settings .field input[type="range"] {
+  width: 100%;
+  accent-color: var(--brand-700);
+  margin: 0;
+  cursor: pointer;
+}
+.hs-settings .field .desc {
+  font-family: var(--serif);
+  font-style: italic;
+  font-size: 11px;
+  color: var(--ink-4);
+  line-height: 1.35;
+}
+.hs-settings .foot {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-top: 12px;
+  border-top: 1px solid var(--rule-soft);
+  margin-top: 4px;
+  font-family: var(--serif);
+  font-style: italic;
+  font-size: 12px;
+  color: var(--ink-3);
+}
+.hs-settings .foot button {
+  font-family: var(--display);
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  background: var(--paper);
+  border: 1px solid var(--brand-300);
+  color: var(--brand-700);
+  padding: 5px 10px;
+  cursor: pointer;
+}
+.hs-settings .foot button:hover { border-color: var(--brand-700); background: var(--paper-2); }
+.hs-settings .checkbox {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--ink-3);
+  cursor: pointer;
+}
+.hs-settings .checkbox input { accent-color: var(--brand-700); }
+
+@media (max-width: 900px) {
+  .hs-settings .row { grid-template-columns: repeat(2, 1fr); }
+}
 </style>
 </head>
 <body>
@@ -722,7 +1464,7 @@ table.runs td.when { color: var(--ink-3); }
   </header>
 
   <!-- Suite selector -->
-  <div class="suite-bar">
+  <div class="suite-bar" id="suite-bar">
     <span>Test suite</span>
     <div class="suite-pills" id="suite-pills"></div>
     <div style="margin-left:auto;display:flex;align-items:center;gap:8px;">
@@ -736,13 +1478,139 @@ table.runs td.when { color: var(--ink-3); }
   </div>
 
   <nav class="tabs" role="tablist" aria-label="Dashboard views" style="margin-top:14px;">
-    <button class="tab" role="tab" aria-selected="true"  data-view="overview">Overview</button>
+    <button class="tab" role="tab" aria-selected="true"  data-view="hotspots">Hotspots<span class="count" id="tab-hs-count"></span></button>
+    <button class="tab" role="tab" aria-selected="false" data-view="overview">Overview</button>
     <button class="tab" role="tab" aria-selected="false" data-view="compare">Compare runs</button>
     <button class="tab" role="tab" aria-selected="false" data-view="cross">Cross-suite</button>
   </nav>
 
+  <!-- =============================== HOTSPOTS =============================== -->
+  <section class="view active" id="view-hotspots" role="tabpanel">
+    <!-- bulletin hero -->
+    <div class="bulletin" id="hs-bulletin"></div>
+
+    <!-- per-suite health strip -->
+    <div class="section-label">
+      Suite health
+      <span class="hint">&mdash; latest runs vs. rolling baseline, click a card to filter the feed below</span>
+    </div>
+    <div class="suite-strip" id="hs-suite-strip"></div>
+
+    <!-- filters -->
+    <div class="section-label">
+      Active hotspots
+      <span class="hint">&mdash; functions whose self IR % has drifted past detection threshold, sorted by severity</span>
+    </div>
+
+    <div class="hs-filters">
+      <div class="group">
+        Severity
+        <div class="chip-group" id="hs-filter-severity">
+          <button data-v="all"      aria-pressed="true">All <span class="n" data-count="all"></span></button>
+          <button data-v="critical" aria-pressed="false">Critical <span class="n" data-count="critical"></span></button>
+          <button data-v="noisy"    aria-pressed="false">Noisy <span class="n" data-count="noisy"></span></button>
+          <button data-v="info"     aria-pressed="false">Info <span class="n" data-count="info"></span></button>
+          <button data-v="volatile" aria-pressed="false">Volatile <span class="n" data-count="volatile"></span></button>
+        </div>
+      </div>
+      <div class="group">
+        Suite
+        <div class="chip-group" id="hs-filter-suite">
+          <button data-v="all" aria-pressed="true">All</button>
+        </div>
+      </div>
+      <div class="group">
+        Sort
+        <select id="hs-sort-by">
+          <option value="severity">Severity (default)</option>
+          <option value="delta">Δ self IR (largest first)</option>
+          <option value="zscore">Z-score</option>
+          <option value="suite">Suite name</option>
+        </select>
+      </div>
+      <div class="right" id="hs-filter-summary"></div>
+      <button class="hs-settings-toggle" id="hs-settings-toggle" aria-expanded="false" aria-controls="hs-settings">
+        ⚙ Tune detection
+      </button>
+    </div>
+
+    <div class="hs-settings" id="hs-settings" role="region" aria-label="Detection settings">
+      <div class="row">
+        <div class="field">
+          <label>Recency window <span class="v" id="hs-set-recency-v"></span></label>
+          <input type="range" id="hs-set-recency" min="1" max="10" step="1">
+          <span class="desc">How many of the most-recent runs form the "current" snapshot.</span>
+        </div>
+        <div class="field">
+          <label>Baseline depth <span class="v" id="hs-set-baseline-v"></span></label>
+          <input type="range" id="hs-set-baseline" min="5" max="60" step="1">
+          <span class="desc">How many runs before the current window form the rolling baseline.</span>
+        </div>
+        <div class="field">
+          <label>Critical above <span class="v" id="hs-set-zcrit-v"></span></label>
+          <input type="range" id="hs-set-zcrit" min="2" max="6" step="0.25">
+          <span class="desc">Z-score threshold for the "critical" severity tier.</span>
+        </div>
+        <div class="field">
+          <label>Noisy above <span class="v" id="hs-set-znoisy-v"></span></label>
+          <input type="range" id="hs-set-znoisy" min="1.25" max="4" step="0.25">
+          <span class="desc">Z-score threshold for the "noisy" tier.</span>
+        </div>
+      </div>
+      <div class="row">
+        <div class="field">
+          <label>Info above <span class="v" id="hs-set-zinfo-v"></span></label>
+          <input type="range" id="hs-set-zinfo" min="0.5" max="3" step="0.25">
+          <span class="desc">Z-score threshold for the "info" tier (the lowest bar).</span>
+        </div>
+        <div class="field">
+          <label>Min |Δ| per function <span class="v" id="hs-set-mindelta-v"></span></label>
+          <input type="range" id="hs-set-mindelta" min="0" max="0.3" step="0.01">
+          <span class="desc">Ignore function-level shifts smaller than this; raise to cut noise.</span>
+        </div>
+        <div class="field">
+          <label>Min |Δ| per module <span class="v" id="hs-set-modmindelta-v"></span></label>
+          <input type="range" id="hs-set-modmindelta" min="0.05" max="1" step="0.05">
+          <span class="desc">Threshold for module-level aggregate shifts (catches whole-library drift).</span>
+        </div>
+        <div class="field">
+          <label>Volatility ratio <span class="v" id="hs-set-vol-v"></span></label>
+          <input type="range" id="hs-set-vol" min="1.5" max="6" step="0.1">
+          <span class="desc">Flag a function as "volatile" when its recent SD is this much higher than baseline SD.</span>
+        </div>
+      </div>
+      <div class="foot">
+        <label class="checkbox">
+          <input type="checkbox" id="hs-set-improvements">
+          Include improvements in the feed
+        </label>
+        <span id="hs-set-saved" style="color:var(--improve);font-style:italic;font-size:11px;opacity:0;transition:opacity 200ms ease;">Settings saved</span>
+        <button id="hs-set-reset">Reset to defaults</button>
+      </div>
+    </div>
+
+    <div id="hotspot-feed"></div>
+
+    <!-- module shifts -->
+    <div class="section-label" style="margin-top:36px;">
+      Module-level shifts
+      <span class="hint">&mdash; aggregated self IR % change per library across all suites; smaller noise filtered out</span>
+    </div>
+    <div class="mod-shifts">
+      <div class="col">
+        <div class="col-head">Hotter modules <span class="hint">Δ self IR % over baseline</span></div>
+        <table id="mod-up"><tbody></tbody></table>
+      </div>
+      <div class="col">
+        <div class="col-head">Cooler modules <span class="hint">improving — for context</span></div>
+        <table id="mod-down"><tbody></tbody></table>
+      </div>
+    </div>
+  </section>
+
   <!-- =============================== OVERVIEW =============================== -->
-  <section class="view active" id="view-overview" role="tabpanel">
+  <section class="view" id="view-overview" role="tabpanel">
+    <div class="bulletin" id="overview-bulletin"></div>
     <div class="overview-summary" id="summary-stats"></div>
 
     <div class="section-label">
@@ -892,6 +1760,11 @@ table.runs td.when { color: var(--ink-3); }
   </section>
 
 </div><!-- .shell -->
+
+<!-- Hotspot detail modal -->
+<div class="modal-overlay" id="hs-modal-overlay">
+  <div class="modal" id="hs-modal"></div>
+</div>
 
 <script>
 
@@ -1117,7 +1990,7 @@ function renderSparkline(values) {
    STATE
    ================================================================ */
 let state = {
-  view:           "overview",
+  view:           "hotspots",
   suite:          "",
   zoom:           "run",
   currentRunIdx:  0,   // index within getSuiteRuns(state.suite)
@@ -1170,9 +2043,13 @@ function setTab(name) {
   document.querySelectorAll(".view").forEach(function(v) {
     v.classList.toggle("active", v.id === "view-" + name);
   });
-  if (name === "overview")  renderOverview();
-  else if (name === "compare") rerenderCompare();
-  else if (name === "cross")   renderCrossSuite();
+  // Suite pills are only relevant to suite-scoped views
+  const suiteBar = document.getElementById("suite-bar");
+  if (suiteBar) suiteBar.style.display = (name === "hotspots") ? "none" : "";
+  if (name === "hotspots")        renderHotspots();
+  else if (name === "overview")   renderOverview();
+  else if (name === "compare")    rerenderCompare();
+  else if (name === "cross")      renderCrossSuite();
 }
 
 /* ================================================================
@@ -1236,6 +2113,54 @@ function renderOverview() {
   const cvPct = cv(instrVals);
   const latest = runs[runs.length - 1];
   const deltaPct = ((latest.instructions - mu) / mu) * 100;
+
+  // Bulletin hero — suite-level health framed in the Hotspots vocabulary
+  // Compute fresh so branch/sha filter changes are reflected immediately.
+  HS.lastResult = hsDetect();
+  const hsForSuite = HS.lastResult.filter(function(h) { return h.suite === state.suite; });
+  const nCrit  = hsForSuite.filter(function(h) { return h.severity === "critical"; }).length;
+  const nNoisy = hsForSuite.filter(function(h) { return h.severity === "noisy"; }).length;
+  const nVol   = hsForSuite.filter(function(h) { return h.severity === "volatile"; }).length;
+  const nInfo  = hsForSuite.filter(function(h) { return h.severity === "info"; }).length;
+  const calm   = nCrit === 0 && nNoisy === 0 && nVol === 0;
+  const bulletinEl = document.getElementById("overview-bulletin");
+  if (bulletinEl) {
+    bulletinEl.classList.toggle("calm", calm);
+    let headline, lede;
+    if (nCrit > 0) {
+      const worst = hsForSuite.find(function(h) { return h.severity === "critical"; });
+      headline = '<span class="num">' + nCrit + '</span> ' + escapeHtml(state.suite.toUpperCase()) + ' — ' + (nCrit === 1 ? "REGRESSION" : "REGRESSIONS");
+      lede = 'Worst hit: <strong>' + escapeHtml(worst.name) + '</strong> drifted ' + fmt.pp(worst.delta, 2) +
+             ' (z=' + (worst.z >= 0 ? '+' : '') + worst.z.toFixed(1) + '\u03c3) over the last ' + HS.recencyWindow + ' runs.';
+    } else if (nNoisy + nVol > 0) {
+      headline = '<span class="num">' + (nNoisy + nVol) + '</span> ' + escapeHtml(state.suite.toUpperCase()) + ' — NOISY';
+      lede = nNoisy + ' noisy and ' + nVol + ' volatile ' + (nNoisy + nVol === 1 ? "function" : "functions") +
+             ' drifting outside the historical envelope. No critical regressions.';
+    } else {
+      headline = escapeHtml(state.suite.toUpperCase()) + ' — STABLE';
+      lede = '<strong>' + runs.length + '</strong> profiled run' + (runs.length === 1 ? "" : "s") +
+             ', latest at ' + fmt.ir(latest.instructions) + ' instructions (' +
+             (deltaPct >= 0 ? '+' : '') + deltaPct.toFixed(2) + '% vs. mean). ' +
+             'Variance ' + cvPct.toFixed(2) + '% across the window — ' +
+             (cvPct < 0.1 ? 'very stable' : cvPct < 0.3 ? 'stable' : 'noisy') + '.';
+    }
+    bulletinEl.innerHTML =
+      '<div>' +
+        '<div class="kicker">' +
+          '<span class="dot"></span>' +
+          '<span>Suite Overview · ' + escapeHtml(state.suite) + (state.branch ? ' · ' + escapeHtml(state.branch) : '') + '</span>' +
+        '</div>' +
+        '<div class="headline">' + headline + '</div>' +
+        '<div class="lede">' + lede + '</div>' +
+      '</div>' +
+      '<div class="breakdown">' +
+        '<div class="row"><span>runs</span><span class="v">' + runs.length + '</span></div>' +
+        '<div class="row"><span>critical</span><span class="v ' + (nCrit ? "crit" : "") + '">' + nCrit + '</span></div>' +
+        '<div class="row"><span>noisy / vol</span><span class="v ' + ((nNoisy + nVol) ? "noisy" : "") + '">' + (nNoisy + nVol) + '</span></div>' +
+        '<div class="row"><span>variance</span><span class="v">' + cvPct.toFixed(2) + '%</span></div>' +
+        '<div class="scan">click any run row below to diff it against the previous run</div>' +
+      '</div>';
+  }
 
   // Summary stats
   const summaryEl = document.getElementById("summary-stats");
@@ -1865,7 +2790,8 @@ function init() {
     state.currentRunIdx  = Math.max(0, currentRuns().length - 1);
     state.baselineRunIdx = 0;
     rebuildRunSelects();
-    if (state.view === "overview")      renderOverview();
+    if (state.view === "hotspots")      renderHotspots();
+    else if (state.view === "overview") renderOverview();
     else if (state.view === "compare")  rerenderCompare();
     else if (state.view === "cross")    renderCrossSuite();
   }
@@ -1879,6 +2805,21 @@ function init() {
   // Sync suite pills to initial state
   setSuite(state.suite);
 
+  // Wire Hotspots filters (severity chips + sort) once; suite chips are
+  // rebuilt dynamically inside renderHotspots based on loaded data.
+  hsBuildSeverityChips();
+  hsLoadSettings();
+  hsWireSettings();
+  hsSyncSettingsUI();
+
+  // First render. Default tab is Hotspots; render it now and hide the
+  // suite-bar (it's only meaningful in suite-scoped views).
+  const suiteBar = document.getElementById("suite-bar");
+  if (state.view === "hotspots") {
+    if (suiteBar) suiteBar.style.display = "none";
+    renderHotspots();
+  }
+
   // Resize handler
   let resizeTimer;
   window.addEventListener("resize", function() {
@@ -1887,6 +2828,854 @@ function init() {
       if (state.view === "compare") rerenderCompare();
     }, 120);
   });
+}
+
+/* ================================================================
+   HOTSPOTS view — cross-suite regression detection + render
+   ================================================================ */
+const HS = {
+  baselineRuns:    30,    // historical runs to baseline against
+  recencyWindow:   3,     // most-recent runs forming the "current" snapshot
+  // Defaults tuned against real freeradius production noise. Lower thresholds
+  // mean more signals surface; raise them in the filter chips above if it gets noisy.
+  zCritical:       3.0,
+  zNoisy:          1.8,
+  zInfo:           1.2,
+  minDeltaPP:      0.02,
+  volatilityRatio: 2.5,
+  // Module-level detection — surfaces macro shifts when individual functions
+  // each drift sub-threshold but together move a whole library noticeably.
+  modMinDeltaPP:   0.15,
+  showImprovements: false,
+  filterSeverity: "all",
+  filterSuite:    "all",
+  sortBy:         "severity",
+  // populated by detectHotspots()
+  lastResult: []
+};
+
+function hsBySuite() {
+  // Sort ascending by time and group by suite. Branch/SHA filters from the
+  // masthead apply so the bulletin matches the rest of the dashboard.
+  const out = {};
+  const data = PROFILING_DATA.slice().sort(function(a, b) {
+    const ta = new Date(a.timestamp).getTime() || 0;
+    const tb = new Date(b.timestamp).getTime() || 0;
+    return ta - tb;
+  });
+  data.forEach(function(r) {
+    if (state.branch && r.branch !== state.branch) return;
+    if (state.sha    && r.sha    !== state.sha)    return;
+    (out[r.test_suite] = out[r.test_suite] || []).push(r);
+  });
+  return out;
+}
+
+function hsGetFn(run, name) {
+  const f = run.top_functions.find(function(x) { return x.name === name; });
+  return f ? f.self_ir_pct : null;
+}
+
+// Returns the time-series value for a hotspot at a given run — handles
+// both function-level hotspots (lookup by name) and module-level ones
+// (sum self_ir_pct across all functions in the module).
+function hsValueFor(run, h) {
+  if (!h.isModule) return hsGetFn(run, h.name);
+  let s = 0;
+  run.top_functions.forEach(function(fn) { if (fn.module === h.module) s += fn.self_ir_pct; });
+  return s;
+}
+
+function hsDetect() {
+  const grouped = hsBySuite();
+  const hotspots = [];
+
+  for (const suite of Object.keys(grouped)) {
+    const runs = grouped[suite];
+    if (runs.length < HS.recencyWindow + 5) continue;
+
+    const last = runs.slice(-HS.recencyWindow);
+    const histAll = runs.slice(0, -HS.recencyWindow);
+    const hist = histAll.slice(-HS.baselineRuns);
+
+    const names = new Set();
+    runs.forEach(function(r) { r.top_functions.forEach(function(f) { names.add(f.name); }); });
+
+    for (const name of names) {
+      const lastVals = last.map(function(r) { return hsGetFn(r, name); }).filter(function(v) { return v != null; });
+      const histVals = hist.map(function(r) { return hsGetFn(r, name); }).filter(function(v) { return v != null; });
+      if (lastVals.length === 0 || histVals.length < 5) continue;
+
+      const currMean = mean(lastVals);
+      const baseMean = mean(histVals);
+      const baseSD   = stdev(histVals);
+      const currSD   = stdev(lastVals);
+      const delta    = currMean - baseMean;
+      const safeSD   = Math.max(baseSD, 0.005);
+      const z        = delta / safeSD;
+      const volRatio = baseSD > 0 ? currSD / baseSD : 1;
+
+      const absDelta = Math.abs(delta);
+      if (absDelta < HS.minDeltaPP && volRatio < HS.volatilityRatio) continue;
+      if (!HS.showImprovements && delta < 0 && volRatio < HS.volatilityRatio) continue;
+
+      let severity = null;
+      if (z >= HS.zCritical || (delta >= 0.40 && z >= HS.zNoisy)) severity = "critical";
+      else if (z >= HS.zNoisy) severity = "noisy";
+      else if (z >= HS.zInfo)  severity = "info";
+      if (severity == null && volRatio >= HS.volatilityRatio) severity = "volatile";
+      if (severity == null && HS.showImprovements && z <= -HS.zInfo) severity = "improve";
+      if (severity == null) continue;
+
+      const latestRun = runs[runs.length - 1];
+      const fnRef = latestRun.top_functions.find(function(f) { return f.name === name; });
+      hotspots.push({
+        suite: suite,
+        name: name,
+        module: fnRef ? fnRef.module : "?",
+        file:   fnRef ? fnRef.file   : null,
+        library: fnRef ? fnRef.library : null,
+        current:  +currMean.toFixed(3),
+        baseline: +baseMean.toFixed(3),
+        delta:    +delta.toFixed(3),
+        baseSD:   +baseSD.toFixed(4),
+        currSD:   +currSD.toFixed(4),
+        z:        +z.toFixed(2),
+        absZ:     Math.abs(z),
+        volRatio: +volRatio.toFixed(2),
+        severity: severity,
+        runs: runs,
+        last: last,
+        hist: hist,
+        isModule: false
+      });
+    }
+
+    // ----- Module-level pass: catch macro shifts when individual functions
+    // each drift sub-threshold but together move a whole library noticeably. -----
+    function moduleSums(runList) {
+      return runList.map(function(r) {
+        const m = {};
+        r.top_functions.forEach(function(fn) { m[fn.module] = (m[fn.module] || 0) + fn.self_ir_pct; });
+        return m;
+      });
+    }
+    const lastModSums = moduleSums(last);
+    const histModSums = moduleSums(hist);
+    const allMods = new Set();
+    [].concat(lastModSums, histModSums).forEach(function(o) { Object.keys(o).forEach(function(m) { allMods.add(m); }); });
+
+    for (const mod of allMods) {
+      const lastModVals = lastModSums.map(function(o) { return o[mod] || 0; });
+      const histModVals = histModSums.map(function(o) { return o[mod] || 0; });
+      const currMean = mean(lastModVals);
+      const baseMean = mean(histModVals);
+      const baseSD   = stdev(histModVals);
+      const currSD   = stdev(lastModVals);
+      const delta    = currMean - baseMean;
+      const safeSD   = Math.max(baseSD, 0.01);
+      const z        = delta / safeSD;
+      const volRatio = baseSD > 0 ? currSD / baseSD : 1;
+
+      // Module-level threshold is wider — these aggregate signals matter more
+      // when the absolute shift is big, even if z-score is modest.
+      if (Math.abs(delta) < HS.modMinDeltaPP) continue;
+      if (!HS.showImprovements && delta < 0) continue;
+
+      let severity = null;
+      if (Math.abs(delta) >= 1.0 || (Math.abs(delta) >= 0.5 && z >= HS.zNoisy)) severity = "critical";
+      else if (Math.abs(delta) >= 0.4 || z >= HS.zNoisy) severity = "noisy";
+      else if (Math.abs(delta) >= HS.modMinDeltaPP || z >= HS.zInfo) severity = "info";
+      if (severity == null) continue;
+
+      // Skip module entries if a function in the same module is already flagged
+      // critical — avoid double-counting the same signal.
+      const dominantFn = hotspots.find(function(h) {
+        return h.suite === suite && h.module === mod && h.severity === "critical" && Math.abs(h.delta) > Math.abs(delta) * 0.7;
+      });
+      if (dominantFn) continue;
+
+      hotspots.push({
+        suite: suite,
+        name: mod + " (module total)",
+        module: mod,
+        file: null,
+        library: null,
+        current:  +currMean.toFixed(3),
+        baseline: +baseMean.toFixed(3),
+        delta:    +delta.toFixed(3),
+        baseSD:   +baseSD.toFixed(4),
+        currSD:   +currSD.toFixed(4),
+        z:        +z.toFixed(2),
+        absZ:     Math.abs(z),
+        volRatio: +volRatio.toFixed(2),
+        severity: severity,
+        runs: runs,
+        last: last,
+        hist: hist,
+        isModule: true
+      });
+    }
+  }
+  return hotspots;
+}
+
+function hsSevRank(s) {
+  const r = { critical: 0, noisy: 1, info: 2, volatile: 3, improve: 4 };
+  return r[s] != null ? r[s] : 9;
+}
+
+function hsFilterAndSort(all) {
+  let xs = all.slice();
+  if (HS.filterSeverity !== "all") xs = xs.filter(function(h) { return h.severity === HS.filterSeverity; });
+  if (HS.filterSuite    !== "all") xs = xs.filter(function(h) { return h.suite === HS.filterSuite; });
+  if (HS.sortBy === "severity") {
+    xs.sort(function(a, b) {
+      const sa = hsSevRank(a.severity) - hsSevRank(b.severity);
+      return sa !== 0 ? sa : b.absZ - a.absZ;
+    });
+  } else if (HS.sortBy === "delta") {
+    xs.sort(function(a, b) { return Math.abs(b.delta) - Math.abs(a.delta); });
+  } else if (HS.sortBy === "zscore") {
+    xs.sort(function(a, b) { return b.absZ - a.absZ; });
+  } else if (HS.sortBy === "suite") {
+    xs.sort(function(a, b) { return a.suite.localeCompare(b.suite) || hsSevRank(a.severity) - hsSevRank(b.severity); });
+  }
+  return xs;
+}
+
+function hsSparkline(values, opts) {
+  opts = opts || {};
+  const w = opts.width || 220;
+  const h = opts.height || 60;
+  const pad = 4;
+  if (!values.length) return '<svg viewBox="0 0 ' + w + ' ' + h + '"></svg>';
+
+  const min = Math.min.apply(null, values);
+  const max = Math.max.apply(null, values);
+  const range = (max - min) || 1;
+  const xs = values.map(function(_, i) { return pad + (i / Math.max(1, values.length - 1)) * (w - 2*pad); });
+  const ys = values.map(function(v) { return h - pad - ((v - min) / range) * (h - 2*pad); });
+  const path = xs.map(function(x, i) { return (i === 0 ? "M" : "L") + x.toFixed(1) + " " + ys[i].toFixed(1); }).join(" ");
+  const stroke = opts.stroke || "var(--brand-700)";
+  const accent = opts.accent || "var(--regress)";
+  const area = path + " L " + xs[xs.length-1].toFixed(1) + " " + (h-pad) + " L " + xs[0].toFixed(1) + " " + (h-pad) + " Z";
+
+  let baselineLine = "";
+  if (opts.baseline != null && opts.baseline >= min && opts.baseline <= max) {
+    const by = h - pad - ((opts.baseline - min) / range) * (h - 2*pad);
+    baselineLine = '<line x1="' + pad + '" y1="' + by.toFixed(1) + '" x2="' + (w-pad) + '" y2="' + by.toFixed(1) +
+                   '" stroke="' + stroke + '" stroke-width="0.5" stroke-dasharray="2 2" opacity="0.5"/>';
+  }
+  const recN = opts.recencyHighlight || 0;
+  let recRect = "";
+  if (recN > 0 && values.length - recN > 0) {
+    const x0 = xs[values.length - recN];
+    recRect = '<rect x="' + x0.toFixed(1) + '" y="' + (pad-1) + '" width="' + (w - pad - x0).toFixed(1) +
+              '" height="' + (h-2*pad+2).toFixed(1) + '" fill="' + accent + '" opacity="0.07"/>';
+  }
+  const lx = xs[xs.length-1], ly = ys[ys.length-1];
+  return '<svg viewBox="0 0 ' + w + ' ' + h + '" preserveAspectRatio="none">' +
+    recRect + baselineLine +
+    '<path d="' + area + '" fill="' + stroke + '" opacity="0.07"/>' +
+    '<path d="' + path + '" fill="none" stroke="' + stroke + '" stroke-width="1.4" stroke-linejoin="round"/>' +
+    '<circle cx="' + lx.toFixed(1) + '" cy="' + ly.toFixed(1) + '" r="2.6" fill="' + accent + '"/>' +
+    '</svg>';
+}
+
+function hsCategoryLabel(h) {
+  if (h.module === "libc") return "stdlib";
+  if (h.module === "libfreeradius-util")   return "util";
+  if (h.module === "libfreeradius-server") return "server";
+  if (h.module === "talloc")               return "talloc";
+  if (h.module === "libkqueue")            return "kqueue";
+  if (h.module === "libmysqlclient")       return "mysql client";
+  return h.module;
+}
+
+function hsDescribe(h) {
+  const window = HS.recencyWindow;
+  if (h.severity === "critical") {
+    return 'Self IR climbed <span class="delta">' + fmt.pp(h.delta, 2) + '</span> over the last ' + window +
+           ' runs &mdash; ' + (h.delta / h.baseline * 100).toFixed(0) + '% above its usual share. ' +
+           '<span class="sig">z = ' + (h.z >= 0 ? '+' : '') + h.z.toFixed(1) + '\u03c3</span>';
+  }
+  if (h.severity === "noisy") {
+    return 'Recent runs show a <span class="delta">' + fmt.pp(h.delta, 2) +
+           '</span> shift &mdash; outside the baseline envelope but not yet alarming. ' +
+           '<span class="sig">z = ' + (h.z >= 0 ? '+' : '') + h.z.toFixed(1) + '\u03c3</span>';
+  }
+  if (h.severity === "info") {
+    return 'Small <span class="delta">' + fmt.pp(h.delta, 2) +
+           '</span> drift; flagged because it persists rather than because it&rsquo;s large. ' +
+           '<span class="sig">z = ' + (h.z >= 0 ? '+' : '') + h.z.toFixed(1) + '\u03c3</span>';
+  }
+  if (h.severity === "volatile") {
+    return 'Recent runs are <span class="delta">' + h.volRatio.toFixed(1) +
+           '\u00d7 noisier</span> than historical envelope; mean is steady but variance spiked. ' +
+           '<span class="sig">currSD = ' + h.currSD.toFixed(2) + 'pp</span>';
+  }
+  if (h.severity === "improve") {
+    return 'Self IR <span class="delta" style="color:var(--improve)">' + fmt.pp(h.delta, 2) +
+           '</span> &mdash; an improvement vs. baseline. <span class="sig">z = ' +
+           (h.z >= 0 ? '+' : '') + h.z.toFixed(1) + '\u03c3</span>';
+  }
+  return "";
+}
+
+function hsRenderBulletin(all) {
+  const nCrit  = all.filter(function(h) { return h.severity === "critical"; }).length;
+  const nNoisy = all.filter(function(h) { return h.severity === "noisy"; }).length;
+  const nVol   = all.filter(function(h) { return h.severity === "volatile"; }).length;
+  const nInfo  = all.filter(function(h) { return h.severity === "info"; }).length;
+  const nMod   = all.filter(function(h) { return h.isModule; }).length;
+  const nFn    = all.filter(function(h) { return !h.isModule; }).length;
+  const total  = nCrit + nNoisy + nVol + nInfo;
+  const calm   = nCrit === 0 && nNoisy === 0;
+
+  let headline, lede;
+  const grouped = hsBySuite();
+  if (nCrit > 0) {
+    const worst = all.find(function(h) { return h.severity === "critical"; });
+    headline = '<span class="num">' + nCrit + '</span> CRITICAL ' + (nCrit === 1 ? "REGRESSION" : "REGRESSIONS");
+    const worstLabel = worst.isModule ? "module " + escapeHtml(worst.module) : escapeHtml(worst.name);
+    lede = 'Largest hit: <strong>' + escapeHtml(worst.suite) + ' / ' + worstLabel +
+           '</strong> drifted ' + fmt.pp(worst.delta, 2) + ' (z=' + (worst.z >= 0 ? '+' : '') + worst.z.toFixed(1) + '\u03c3) over the last ' +
+           HS.recencyWindow + ' runs. ' +
+           (total > nCrit ? (total - nCrit) + ' additional ' + (total - nCrit === 1 ? "change" : "changes") + ' below threshold.' : "");
+  } else if (nNoisy > 0 || nVol > 0) {
+    headline = '<span class="num">' + total + '</span> CHANGES WORTH A LOOK';
+    lede = 'No critical regressions, but ' + nNoisy + ' noisy and ' + nVol + ' volatile ' +
+           (nNoisy + nVol === 1 ? "signal" : "signals") +
+           ' are drifting outside their usual envelope. Worth reviewing before the next release cut.';
+  } else if (nInfo > 0) {
+    headline = '<span class="num">' + total + '</span> MINOR DRIFTS';
+    lede = 'Everything within tolerance. ' +
+           (nMod > 0 ? '<strong>' + nMod + '</strong> module-level shift' + (nMod === 1 ? "" : "s") + ' detected \u2014 see feed below. ' : '') +
+           'No individual function crossed the critical or noisy threshold.';
+  } else {
+    headline = '<span class="num">0</span> HOTSPOTS &mdash; ALL CLEAR';
+    lede = 'Across <strong>' + Object.keys(grouped).length + '</strong> suites and <strong>' +
+           PROFILING_DATA.length + '</strong> profiled runs, every tracked function is within its rolling baseline. ' +
+           'If you expected to see something here, try relaxing the thresholds via &ldquo;\u2699 Tune detection&rdquo; below.';
+  }
+  const el = document.getElementById("hs-bulletin");
+  el.classList.toggle("calm", calm);
+  el.innerHTML =
+    '<div>' +
+      '<div class="kicker">' +
+        '<span class="dot"></span>' +
+        '<span>Hotspot Bulletin &mdash; auto-generated ' +
+          new Date().toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" }) +
+        '</span>' +
+      '</div>' +
+      '<div class="headline">' + headline + '</div>' +
+      '<div class="lede">' + lede + '</div>' +
+    '</div>' +
+    '<div class="breakdown">' +
+      '<div class="row"><span>critical</span><span class="v ' + (nCrit ? "crit" : "") + '">' + nCrit + '</span></div>' +
+      '<div class="row"><span>noisy</span><span class="v '   + (nNoisy ? "noisy" : "") + '">' + nNoisy + '</span></div>' +
+      '<div class="row"><span>volatile</span><span class="v ' + (nVol ? "noisy" : "") + '">' + nVol + '</span></div>' +
+      '<div class="row"><span>info</span><span class="v '    + (nInfo ? "info" : "") + '">' + nInfo + '</span></div>' +
+      '<div class="row" style="border-top:1px solid var(--rule-soft);padding-top:6px;margin-top:2px;"><span>fn / module</span><span class="v" style="font-size:13px;">' + nFn + ' / ' + nMod + '</span></div>' +
+      '<div class="scan">scan window: last ' + HS.recencyWindow + ' runs vs. ' + HS.baselineRuns + '-run baseline</div>' +
+    '</div>';
+}
+
+function hsRenderSuiteStrip(all) {
+  const grouped = hsBySuite();
+  const root = document.getElementById("hs-suite-strip");
+  const order = Object.keys(grouped).sort();
+
+  root.innerHTML = order.map(function(suite) {
+    const runs = grouped[suite];
+    const latest = runs[runs.length - 1];
+    if (!latest) return "";
+    const hs = all.filter(function(h) { return h.suite === suite; });
+    const nCrit  = hs.filter(function(h) { return h.severity === "critical"; }).length;
+    const nNoisy = hs.filter(function(h) { return h.severity === "noisy"; }).length;
+    const nInfo  = hs.filter(function(h) { return h.severity === "info"; }).length;
+    const nVol   = hs.filter(function(h) { return h.severity === "volatile"; }).length;
+
+    const trend = runs.slice(-(HS.baselineRuns + HS.recencyWindow)).map(function(r) { return r.instructions; }).filter(function(v) { return v != null; });
+    const trendBase = trend.length > HS.recencyWindow ? mean(trend.slice(0, -HS.recencyWindow)) : 0;
+    const latestInstr = trend.length >= HS.recencyWindow ? mean(trend.slice(-HS.recencyWindow)) : 0;
+    const instrDelta = trendBase ? (latestInstr - trendBase) / trendBase * 100 : 0;
+
+    const sparkSVG = trend.length > 1 ? hsSparkline(trend, {
+      width: 240, height: 30,
+      stroke: nCrit ? "var(--regress)" : "var(--brand-600)",
+      accent: nCrit ? "var(--regress)" : "var(--brand-700)",
+      recencyHighlight: HS.recencyWindow
+    }) : "";
+
+    const badges = [];
+    if (nCrit)  badges.push('<span class="flag-pill critical">' + nCrit + ' crit</span>');
+    if (nNoisy) badges.push('<span class="flag-pill warning">' + nNoisy + ' noisy</span>');
+    if (nVol)   badges.push('<span class="flag-pill warning">' + nVol + ' vol</span>');
+    if (nInfo)  badges.push('<span class="flag-pill info">' + nInfo + ' info</span>');
+    if (!badges.length) badges.push('<span class="flag-pill ok">stable</span>');
+
+    const instrClass = instrDelta > 0.3 ? "regress" : instrDelta < -0.3 ? "improve" : "";
+    return '<div class="suite-card ' + (nCrit ? "has-crit" : "") + '" data-suite="' + escapeHtml(suite) + '">' +
+      '<div class="hdr">' +
+        '<span class="name">' + escapeHtml(suite) + '</span>' +
+        '<span class="badges">' + badges.join("") + '</span>' +
+      '</div>' +
+      '<div class="stats">' +
+        '<div class="k">latest instr</div><div class="v">' + fmt.ir(latest.instructions) + '</div>' +
+        '<div class="k">vs baseline</div><div class="v ' + instrClass + '">' +
+          (instrDelta >= 0 ? "+" : "") + instrDelta.toFixed(2) + '%</div>' +
+        '<div class="k">mispred</div><div class="v">' +
+          (latest.mispred_rate != null ? latest.mispred_rate.toFixed(1) + '%' : '\u2014') +
+          ' / ' + (latest.indirect_mispred_rate != null ? latest.indirect_mispred_rate.toFixed(1) + '% ind' : '\u2014') + '</div>' +
+        '<div class="k">runs in win</div><div class="v">' + runs.length + '</div>' +
+      '</div>' +
+      '<div class="spark-wrap">' + sparkSVG + '</div>' +
+    '</div>';
+  }).join("");
+
+  root.querySelectorAll(".suite-card").forEach(function(card) {
+    card.addEventListener("click", function() {
+      const s = card.dataset.suite;
+      HS.filterSuite = (HS.filterSuite === s) ? "all" : s;
+      renderHotspots();
+    });
+  });
+}
+
+function hsRenderFeed(filtered, all) {
+  const feed = document.getElementById("hotspot-feed");
+
+  document.querySelectorAll('#hs-filter-severity [data-count]').forEach(function(el) {
+    const v = el.dataset.count;
+    const n = v === "all" ? all.length : all.filter(function(h) { return h.severity === v; }).length;
+    el.textContent = n;
+  });
+  document.getElementById("hs-filter-summary").innerHTML =
+    'Showing <strong style="color:var(--brand-800);font-style:normal;">' + filtered.length + '</strong> of ' + all.length + ' hotspots';
+
+  const tabCount = document.getElementById("tab-hs-count");
+  if (tabCount) tabCount.textContent = all.length ? " · " + all.length : "";
+
+  if (!filtered.length) {
+    feed.innerHTML = '<div class="empty-state">' +
+      '<div class="glyph">\u2014</div>' +
+      'No hotspots match these filters.' +
+      '<div style="margin-top:8px;font-size:11px;text-transform:uppercase;letter-spacing:0.06em;font-style:normal;font-family:var(--mono);color:var(--ink-4);">' +
+        'Loosen severity, clear suite, or relax thresholds.' +
+      '</div></div>';
+    return;
+  }
+
+  feed.innerHTML = filtered.map(function(h, idx) {
+    const allVals = h.runs.map(function(r) { return hsValueFor(r, h); }).filter(function(v) { return v != null; });
+    const tail = allVals.slice(-32);
+    const min = Math.min.apply(null, tail), max = Math.max.apply(null, tail);
+    const spark = hsSparkline(tail, {
+      width: 280, height: 60,
+      stroke: h.severity === "improve" ? "var(--improve)" : "var(--brand-600)",
+      accent: h.severity === "critical" ? "var(--regress)"
+            : h.severity === "noisy"    ? "var(--warn)"
+            : h.severity === "volatile" ? "var(--brand-500)"
+            : h.severity === "improve"  ? "var(--improve)"
+            : "var(--info)",
+      baseline: h.baseline,
+      recencyHighlight: HS.recencyWindow
+    });
+    const sevClass = "sev-" + h.severity;
+    const deltaClass = h.delta >= 0 ? "regress" : "improve";
+    const pillClass = h.severity === "critical" ? "critical"
+                    : h.severity === "info" ? "info" : "warning";
+    // Module hotspots display differently — emphasise the library, hide the
+    // synthesised "(module total)" suffix, swap the trend-label.
+    const displayName = h.isModule ? h.module : escapeHtml(h.name);
+    const displayModSuffix = h.isModule
+      ? '<span class="mod" style="font-size:11px;">module-level aggregate · ' + h.suite + '</span>'
+      : '<span class="mod">@ ' + escapeHtml(h.module) + '</span>';
+    const categoryLabel = h.isModule ? "module shift" : hsCategoryLabel(h);
+
+    return '<article class="hotspot ' + sevClass + (h.isModule ? ' is-module' : '') + '" data-idx="' + idx + '" tabindex="0">' +
+      '<div class="stripe"></div>' +
+      '<div class="body">' +
+        '<div class="top-row">' +
+          '<span class="suite-badge">' + escapeHtml(h.suite) + '</span>' +
+          '<span class="category">' + escapeHtml(categoryLabel) + '</span>' +
+          '<span class="flag-pill ' + pillClass + '">' + h.severity + '</span>' +
+        '</div>' +
+        '<div class="fn-name">' + (h.isModule ? escapeHtml(displayName) : escapeHtml(h.name)) +
+          ' ' + displayModSuffix + '</div>' +
+        '<div class="lede">' + hsDescribe(h) + '</div>' +
+        '<div class="foot">' +
+          'baseline ' + fmt.pct(h.baseline, 2) + ' &nbsp;\u2192&nbsp; current ' + fmt.pct(h.current, 2) +
+          '<span class="sep">\u00b7</span>' +
+          'baseSD ' + h.baseSD.toFixed(2) + 'pp' +
+          '<span class="sep">\u00b7</span>' +
+          h.runs.length + ' runs in window' +
+          (h.file ? '<span class="sep">\u00b7</span>' + escapeHtml(h.file) : '') +
+        '</div>' +
+      '</div>' +
+      '<div class="trend">' +
+        '<div class="label"><span>' + (h.isModule ? "module total" : "self IR %") + ' &mdash; last ' + tail.length + ' runs</span>' +
+          '<span>' + min.toFixed(2) + ' \u2192 ' + max.toFixed(2) + '</span></div>' +
+        spark +
+        '<div class="scale"><span>' + tail.length + ' ago</span><span>now</span></div>' +
+      '</div>' +
+      '<div class="action">' +
+        '<div class="metrics">' +
+          '<div class="big ' + deltaClass + '">' + fmt.pp(h.delta, 2) + '</div>' +
+          '<div class="sub">vs. baseline</div>' +
+        '</div>' +
+        '<button class="investigate" data-idx="' + idx + '">Investigate &rarr;</button>' +
+      '</div>' +
+    '</article>';
+  }).join("");
+
+  feed.querySelectorAll(".hotspot").forEach(function(card) {
+    card.addEventListener("click", function(e) {
+      const idx = +card.dataset.idx;
+      hsOpenModal(filtered[idx]);
+    });
+  });
+}
+
+function hsRenderModuleShifts() {
+  const grouped = hsBySuite();
+  const moduleAgg = new Map();
+
+  for (const suite of Object.keys(grouped)) {
+    const runs = grouped[suite];
+    if (runs.length < HS.recencyWindow + 5) continue;
+    const last = runs.slice(-HS.recencyWindow);
+    const hist = runs.slice(0, -HS.recencyWindow).slice(-HS.baselineRuns);
+    function moduleSum(run) {
+      const m = {};
+      run.top_functions.forEach(function(fn) { m[fn.module] = (m[fn.module] || 0) + fn.self_ir_pct; });
+      return m;
+    }
+    const lastSums = last.map(moduleSum);
+    const histSums = hist.map(moduleSum);
+    const allMods = new Set();
+    [].concat(lastSums, histSums).forEach(function(o) { Object.keys(o).forEach(function(m) { allMods.add(m); }); });
+    for (const mod of allMods) {
+      const lastVals = lastSums.map(function(o) { return o[mod] || 0; });
+      const histVals = histSums.map(function(o) { return o[mod] || 0; });
+      const currMean = mean(lastVals);
+      const baseMean = mean(histVals);
+      const delta = currMean - baseMean;
+      if (Math.abs(delta) < 0.06) continue;
+      moduleAgg.set(suite + "::" + mod, { suite: suite, module: mod, current: currMean, baseline: baseMean, delta: delta });
+    }
+  }
+  const arr = Array.from(moduleAgg.values());
+  const up   = arr.filter(function(m) { return m.delta > 0; }).sort(function(a, b) { return b.delta - a.delta; }).slice(0, 6);
+  const down = arr.filter(function(m) { return m.delta < 0; }).sort(function(a, b) { return a.delta - b.delta; }).slice(0, 6);
+
+  function row(m, cls) {
+    return '<tr>' +
+      '<td><span class="module">' + escapeHtml(m.module) + '</span><span class="suite-tag">' + escapeHtml(m.suite) + '</span></td>' +
+      '<td class="num">' + fmt.pct(m.baseline, 2) + '</td>' +
+      '<td class="num">' + fmt.pct(m.current, 2) + '</td>' +
+      '<td class="num ' + cls + '">' + fmt.pp(m.delta, 2) + '</td>' +
+    '</tr>';
+  }
+  const head = '<tr style="background:var(--paper-2);">' +
+    '<td style="font-size:10px;letter-spacing:0.06em;text-transform:uppercase;color:var(--ink-4);">Module</td>' +
+    '<td class="num" style="font-size:10px;letter-spacing:0.06em;text-transform:uppercase;color:var(--ink-4);">Base</td>' +
+    '<td class="num" style="font-size:10px;letter-spacing:0.06em;text-transform:uppercase;color:var(--ink-4);">Now</td>' +
+    '<td class="num" style="font-size:10px;letter-spacing:0.06em;text-transform:uppercase;color:var(--ink-4);">\u0394</td>' +
+  '</tr>';
+
+  const empty = '<tr><td colspan="4" style="color:var(--ink-4);font-style:italic;font-family:var(--serif);text-align:center;padding:18px;">' +
+                'No modules trending past the noise floor.</td></tr>';
+  document.querySelector("#mod-up tbody").innerHTML   = head + (up.length   ? up.map(function(m) { return row(m, "regress"); }).join("") : empty);
+  document.querySelector("#mod-down tbody").innerHTML = head + (down.length ? down.map(function(m) { return row(m, "improve"); }).join("") : empty);
+}
+
+function hsBuildSuiteChips() {
+  const group = document.getElementById("hs-filter-suite");
+  if (!group) return;
+  const suites = Object.keys(hsBySuite()).sort();
+  // Keep the "All" button, replace the rest
+  group.innerHTML = '<button data-v="all" aria-pressed="true">All</button>' +
+    suites.map(function(s) {
+      return '<button data-v="' + escapeHtml(s) + '" aria-pressed="false">' + escapeHtml(s) + '</button>';
+    }).join("");
+  group.querySelectorAll("button").forEach(function(btn) {
+    btn.addEventListener("click", function() {
+      group.querySelectorAll("button").forEach(function(b) { b.setAttribute("aria-pressed", "false"); });
+      btn.setAttribute("aria-pressed", "true");
+      HS.filterSuite = btn.dataset.v;
+      renderHotspots();
+    });
+  });
+}
+
+function hsBuildSeverityChips() {
+  const group = document.getElementById("hs-filter-severity");
+  if (!group) return;
+  group.querySelectorAll("button").forEach(function(btn) {
+    btn.addEventListener("click", function() {
+      group.querySelectorAll("button").forEach(function(b) { b.setAttribute("aria-pressed", "false"); });
+      btn.setAttribute("aria-pressed", "true");
+      HS.filterSeverity = btn.dataset.v;
+      renderHotspots();
+    });
+  });
+  document.getElementById("hs-sort-by").addEventListener("change", function(e) {
+    HS.sortBy = e.target.value;
+    renderHotspots();
+  });
+}
+
+// ---- Detection settings panel ----
+// Frozen copy of HS defaults so "Reset" can restore them exactly.
+const HS_DEFAULTS = {
+  baselineRuns: HS.baselineRuns,
+  recencyWindow: HS.recencyWindow,
+  zCritical: HS.zCritical,
+  zNoisy: HS.zNoisy,
+  zInfo: HS.zInfo,
+  minDeltaPP: HS.minDeltaPP,
+  modMinDeltaPP: HS.modMinDeltaPP,
+  volatilityRatio: HS.volatilityRatio,
+  showImprovements: HS.showImprovements
+};
+const HS_LS_KEY = "freeradius-profiling.hotspots.detection.v1";
+
+function hsLoadSettings() {
+  try {
+    const raw = localStorage.getItem(HS_LS_KEY);
+    if (!raw) return;
+    const saved = JSON.parse(raw);
+    Object.keys(HS_DEFAULTS).forEach(function(k) {
+      if (saved[k] != null) HS[k] = saved[k];
+    });
+  } catch (e) { /* corrupt blob, ignore */ }
+}
+
+function hsSaveSettings() {
+  try {
+    const out = {};
+    Object.keys(HS_DEFAULTS).forEach(function(k) { out[k] = HS[k]; });
+    localStorage.setItem(HS_LS_KEY, JSON.stringify(out));
+    const flash = document.getElementById("hs-set-saved");
+    if (flash) {
+      flash.style.opacity = "1";
+      clearTimeout(flash._t);
+      flash._t = setTimeout(function() { flash.style.opacity = "0"; }, 1200);
+    }
+  } catch (e) { /* storage disabled */ }
+}
+
+function hsSyncSettingsUI() {
+  function bind(id, key, formatter) {
+    const inp = document.getElementById(id);
+    const v   = document.getElementById(id + "-v");
+    if (!inp) return;
+    inp.value = HS[key];
+    if (v) v.textContent = formatter ? formatter(HS[key]) : HS[key];
+  }
+  bind("hs-set-recency",     "recencyWindow",    function(x) { return x + " runs"; });
+  bind("hs-set-baseline",    "baselineRuns",     function(x) { return x + " runs"; });
+  bind("hs-set-zcrit",       "zCritical",        function(x) { return x.toFixed(2) + "\u03c3"; });
+  bind("hs-set-znoisy",      "zNoisy",           function(x) { return x.toFixed(2) + "\u03c3"; });
+  bind("hs-set-zinfo",       "zInfo",            function(x) { return x.toFixed(2) + "\u03c3"; });
+  bind("hs-set-mindelta",    "minDeltaPP",       function(x) { return x.toFixed(2) + "pp"; });
+  bind("hs-set-modmindelta", "modMinDeltaPP",    function(x) { return x.toFixed(2) + "pp"; });
+  bind("hs-set-vol",         "volatilityRatio",  function(x) { return x.toFixed(1) + "\u00d7"; });
+  const cb = document.getElementById("hs-set-improvements");
+  if (cb) cb.checked = !!HS.showImprovements;
+}
+
+function hsWireSettings() {
+  const toggle = document.getElementById("hs-settings-toggle");
+  const panel  = document.getElementById("hs-settings");
+  if (!toggle || !panel) return;
+  toggle.addEventListener("click", function() {
+    const open = panel.classList.toggle("open");
+    toggle.setAttribute("aria-expanded", String(open));
+  });
+
+  const bindings = [
+    ["hs-set-recency",     "recencyWindow",   function(s) { return parseInt(s, 10); }],
+    ["hs-set-baseline",    "baselineRuns",    function(s) { return parseInt(s, 10); }],
+    ["hs-set-zcrit",       "zCritical",       parseFloat],
+    ["hs-set-znoisy",      "zNoisy",          parseFloat],
+    ["hs-set-zinfo",       "zInfo",           parseFloat],
+    ["hs-set-mindelta",    "minDeltaPP",      parseFloat],
+    ["hs-set-modmindelta", "modMinDeltaPP",   parseFloat],
+    ["hs-set-vol",         "volatilityRatio", parseFloat]
+  ];
+  bindings.forEach(function(b) {
+    const inp = document.getElementById(b[0]);
+    if (!inp) return;
+    inp.addEventListener("input", function(e) {
+      HS[b[1]] = b[2](e.target.value);
+      hsSyncSettingsUI();
+      renderHotspots();
+    });
+    inp.addEventListener("change", hsSaveSettings);
+  });
+  const cb = document.getElementById("hs-set-improvements");
+  if (cb) {
+    cb.addEventListener("change", function(e) {
+      HS.showImprovements = !!e.target.checked;
+      renderHotspots();
+      hsSaveSettings();
+    });
+  }
+  const reset = document.getElementById("hs-set-reset");
+  if (reset) {
+    reset.addEventListener("click", function() {
+      Object.keys(HS_DEFAULTS).forEach(function(k) { HS[k] = HS_DEFAULTS[k]; });
+      hsSyncSettingsUI();
+      renderHotspots();
+      try { localStorage.removeItem(HS_LS_KEY); } catch (e) {}
+      const flash = document.getElementById("hs-set-saved");
+      if (flash) {
+        flash.textContent = "Restored defaults";
+        flash.style.opacity = "1";
+        clearTimeout(flash._t);
+        flash._t = setTimeout(function() {
+          flash.style.opacity = "0";
+          setTimeout(function() { flash.textContent = "Settings saved"; }, 220);
+        }, 1400);
+      }
+    });
+  }
+}
+
+function hsOpenModal(h) {
+  const overlay = document.getElementById("hs-modal-overlay");
+  const modal   = document.getElementById("hs-modal");
+
+  const tail = h.runs.slice(-12);
+  const timeline = tail.map(function(r, i) {
+    const v = hsValueFor(r, h);
+    if (v == null) return "";
+    const isCurr = i >= tail.length - HS.recencyWindow;
+    const z = h.baseSD > 0 ? (v - h.baseline) / h.baseSD : 0;
+    const flag = isCurr && (Math.abs(z) >= HS.zNoisy);
+    return '<div class="row ' + (flag ? "flag-row " : "") + (i === tail.length-1 ? "curr" : "") + '">' +
+      '<span class="sha">' + escapeHtml(r.sha) + '</span>' +
+      '<span class="v">run #' + r.run_number + ' \u00b7 ' + fmt.pct(v, 2) + (isCurr ? ' (z=' + z.toFixed(1) + ')' : '') + '</span>' +
+      '<span class="ts">' + escapeHtml(fmt.when(r.timestamp) || '') + '</span>' +
+    '</div>';
+  }).join("");
+
+  const allVals = h.runs.map(function(r) { return hsValueFor(r, h); }).filter(function(v) { return v != null; });
+  const wholeSpark = hsSparkline(allVals, {
+    width: 660, height: 90,
+    stroke: "var(--brand-700)",
+    accent: h.severity === "critical" ? "var(--regress)" : "var(--warn)",
+    baseline: h.baseline,
+    recencyHighlight: HS.recencyWindow
+  });
+
+  modal.innerHTML =
+    '<div class="head">' +
+      '<div class="kicker">' + escapeHtml(h.suite) + ' \u00b7 ' + escapeHtml(h.severity) + ' hotspot</div>' +
+      '<div class="title">' + escapeHtml(h.name) + ' <span class="mod">@ ' + escapeHtml(h.module) + '</span></div>' +
+    '</div>' +
+    '<div class="body">' +
+      '<div class="sect">Snapshot</div>' +
+      '<div class="grid">' +
+        '<div class="cell"><div class="k">Baseline</div><div class="v">' + fmt.pct(h.baseline, 2) + '</div></div>' +
+        '<div class="cell"><div class="k">Current (last ' + HS.recencyWindow + ' runs)</div><div class="v">' + fmt.pct(h.current, 2) + '</div></div>' +
+        '<div class="cell"><div class="k">\u0394 self IR</div><div class="v regress">' + fmt.pp(h.delta, 2) + '</div></div>' +
+        '<div class="cell"><div class="k">Z-score</div><div class="v ' + (h.absZ >= HS.zCritical ? "regress" : "") + '">' + (h.z >= 0 ? '+' : '') + h.z.toFixed(1) + '\u03c3</div></div>' +
+        '<div class="cell"><div class="k">Baseline SD</div><div class="v">' + h.baseSD.toFixed(2) + 'pp</div></div>' +
+        '<div class="cell"><div class="k">Volatility ratio</div><div class="v ' + (h.volRatio >= HS.volatilityRatio ? "regress" : "") + '">' + h.volRatio.toFixed(2) + '\u00d7</div></div>' +
+      '</div>' +
+      '<div class="sect">Trend &mdash; all ' + allVals.length + ' runs in window</div>' +
+      '<div style="background:var(--paper-2);padding:8px 12px;border:1px solid var(--rule-soft);">' + wholeSpark + '</div>' +
+      '<div class="sect">Run timeline (last 12)</div>' +
+      '<div class="timeline">' + timeline + '</div>' +
+      (h.file ? '<div class="sect">Source</div>' +
+        '<div class="timeline"><div class="row">' +
+          '<span></span>' +
+          '<span class="v" style="font-family:var(--mono);">' + escapeHtml(h.file) + '</span>' +
+          '<span></span>' +
+        '</div></div>' : '') +
+    '</div>' +
+    '<div class="actions">' +
+      '<button class="btn" data-act="close">Dismiss</button>' +
+      '<button class="btn primary" data-act="compare">Open in Compare runs &rarr;</button>' +
+    '</div>';
+  overlay.classList.add("open");
+
+  modal.querySelectorAll("[data-act]").forEach(function(b) {
+    b.addEventListener("click", function() {
+      if (b.dataset.act === "close") {
+        overlay.classList.remove("open");
+      } else if (b.dataset.act === "compare") {
+        overlay.classList.remove("open");
+        hsInvestigate(h);
+      }
+    });
+  });
+}
+
+// Investigate flow — switch to Compare runs, pre-filtered to the
+// flagged run-pair (latest-in-recency-window as current,
+// last pre-window run as baseline) and drill into the flagged function.
+// Module-level hotspots open Compare at the module zoom level.
+function hsInvestigate(h) {
+  // 1. Pin the suite
+  if (state.suite !== h.suite) {
+    state.suite = h.suite;
+    document.querySelectorAll(".suite-pill").forEach(function(btn) {
+      btn.classList.toggle("active", btn.dataset.suite === h.suite);
+    });
+  }
+  // 2. Recompute run indices into the suite-scoped list
+  rebuildRunSelects();
+  const runs = currentRuns();
+  if (runs.length >= 2) {
+    state.currentRunIdx  = runs.length - 1;
+    state.baselineRunIdx = Math.max(0, runs.length - 1 - HS.recencyWindow);
+  }
+  // 3. Drill into the flagged function (or jump to module zoom)
+  if (h.isModule) {
+    state.drillFn = null;
+    state.filterModule = h.module;
+    state.zoom = "module";
+  } else {
+    state.drillFn = h.name;
+    state.zoom = "function";
+  }
+  // 4. Show Compare tab
+  setTab("compare");
+}
+
+document.getElementById("hs-modal-overlay").addEventListener("click", function(e) {
+  if (e.target.id === "hs-modal-overlay") e.currentTarget.classList.remove("open");
+});
+document.addEventListener("keydown", function(e) {
+  if (e.key === "Escape") {
+    const o = document.getElementById("hs-modal-overlay");
+    if (o) o.classList.remove("open");
+  }
+});
+
+function renderHotspots() {
+  HS.lastResult = hsDetect();
+  hsBuildSuiteChips();
+  // sync chip pressed states
+  document.querySelectorAll("#hs-filter-severity button").forEach(function(b) {
+    b.setAttribute("aria-pressed", String(b.dataset.v === HS.filterSeverity));
+  });
+  document.querySelectorAll("#hs-filter-suite button").forEach(function(b) {
+    b.setAttribute("aria-pressed", String(b.dataset.v === HS.filterSuite));
+  });
+  document.getElementById("hs-sort-by").value = HS.sortBy;
+
+  hsRenderBulletin(HS.lastResult);
+  hsRenderSuiteStrip(HS.lastResult);
+  hsRenderModuleShifts();
+  const filtered = hsFilterAndSort(HS.lastResult);
+  hsRenderFeed(filtered, HS.lastResult);
 }
 
 async function bootstrap() {

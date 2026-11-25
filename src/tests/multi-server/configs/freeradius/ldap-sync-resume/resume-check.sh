@@ -6,7 +6,7 @@
 #  Usage:
 #    resume-check.sh run
 #    resume-check.sh check <reconnect> <reconnects> <users> <window>
-#    resume-check.sh summary <reconnects> <stop window>
+#    resume-check.sh summary <reconnects> <users> <stop window>
 #
 #  `run` runs FreeRADIUS in the foreground and stores the exit status of
 #  FreeRADIUS.  In profiling mode, `run` runs the capture script in
@@ -50,11 +50,19 @@
 #  resumes that fails adds one more `freeradius-exited` or
 #  `freeradius-stalled` line.
 #
-#  `summary` appends the line
+#  `summary` appends four lines and then stops FreeRADIUS:
 #
-#    test-summary {"exits": N, "stalls": N, "reconnects": N, "status": "<text>"}
+#    test-logs     <path on the host of the `failures` directory>
+#    test-expected 0 exits, 0 stalls, N LDAP user changes at N/N reconnects
+#    test-actual   N exits, N stalls, N LDAP user changes at N/N reconnects
+#    test-result   <PASSED|FAILED>
 #
-#  and then stops FreeRADIUS.
+#  `test-expected` is the result that a pass needs, and `test-actual` is
+#  the result of the test in the same form.  An LDAP user change is one
+#  `Add` or one `Present` that slapd sends for an account.  `N/N` is the
+#  number of reconnects after which FreeRADIUS was running and had
+#  received every LDAP user change.  `test-result` is `PASSED` when
+#  FreeRADIUS did not exit and did not stall.
 #
 #  A profiler runs FreeRADIUS under another process name.  The script
 #  finds FreeRADIUS by the command line `freeradius -f`, which every mode
@@ -196,17 +204,17 @@ check)
 			kind=exited
 			copy="exit-$reconnect-$restarts.log"
 			error=$(grep -a 'ASSERT FAILED\|talloc abort' "$log" | tail -1 | tr -d '"\\')
-			status="$label: $(describe_exit) after $received of $want changes"
+			status="$label: $(describe_exit) after $received of $want LDAP user changes"
 		else
 			kind=stalled
 			copy="stall-$reconnect-$restarts.log"
-			error="FreeRADIUS did not receive every change"
+			error="FreeRADIUS did not receive every LDAP user change"
 			if [ -z "${RADIUSD_COMMAND:-}" ]; then
 				gdb -batch -ex 'thread apply all bt 12' -p "$(echo "$pids" | head -1)" \
 					> "$failures/stall-$reconnect-$restarts-backtrace.txt" 2>&1
 				error="$error, see failures/stall-$reconnect-$restarts-backtrace.txt"
 			fi
-			status="$label: FreeRADIUS is running and received $received of $want changes in $window seconds"
+			status="$label: FreeRADIUS is running and received $received of $want LDAP user changes in $window seconds"
 			kill -9 $pids 2> /dev/null
 		fi
 		cp "$log" "$failures/$copy"
@@ -235,7 +243,7 @@ check)
 	echo "$run_pid" > /tmp/freeradius-run.pid
 	wc -l < "$events" > "$mark"
 	if [ "$ok" -eq 1 ]; then
-		echo "sync-resumed-$reconnect {\"ok\": 1, \"status\": \"$label: FreeRADIUS is running and received $want of $want changes\"}" >> "$triggers"
+		echo "sync-resumed-$reconnect {\"ok\": 1, \"status\": \"$label: FreeRADIUS is running and received $want of $want LDAP user changes\"}" >> "$triggers"
 	else
 		echo "sync-resumed-$reconnect {\"ok\": 0, \"status\": \"$failure\"}" >> "$triggers"
 	fi
@@ -244,17 +252,24 @@ check)
 
 summary)
 	reconnects=$2
-	stop_window=$3
+	users=$3
+	stop_window=$4
 
+	want=$((2 * users))
 	exits=$(grep -c '^freeradius-exited ' "$triggers")
 	stalls=$(grep -c '^freeradius-stalled ' "$triggers")
+	complete=$(grep -c '^sync-resumed-[1-9][0-9]* {"ok": 1' "$triggers")
 	if [ "$exits" -eq 0 ] && [ "$stalls" -eq 0 ]; then
-		status="FreeRADIUS kept running and received every change in all $reconnects reconnects"
+		result=PASSED
 	else
-		failed=$(sed -n 's/^freeradius-[a-z]* {"reconnect": \([0-9]*\),.*/\1/p' "$triggers" | sort -nu | paste -sd, -)
-		status="FreeRADIUS exited $exits times and stalled $stalls times in $reconnects reconnects (at reconnects $failed). The exit-*.log and stall-*.log files in $TEST_LOG_DIR/failures hold the log of FreeRADIUS for each exit and stall"
+		result=FAILED
 	fi
-	echo "test-summary {\"exits\": $exits, \"stalls\": $stalls, \"reconnects\": $reconnects, \"status\": \"$status\"}" >> "$triggers"
+	{
+		echo "test-logs     $TEST_LOG_DIR/failures"
+		echo "test-expected 0 exits, 0 stalls, $want LDAP user changes at $reconnects/$reconnects reconnects"
+		echo "test-actual   $exits exits, $stalls stalls, $want LDAP user changes at $complete/$reconnects reconnects"
+		echo "test-result   $result"
+	} >> "$triggers"
 
 	for pid in $(server_pids) $(profiler_pids); do
 		kill "$pid" 2> /dev/null

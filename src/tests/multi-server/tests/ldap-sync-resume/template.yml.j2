@@ -13,8 +13,8 @@
   1. The `start` state starts FreeRADIUS and checks the first resume.
   2. Each `reconnect_<n>` state restarts slapd and checks the resume that
      follows the restart.
-  3. The `summary` state reports the number of exits and stalls, and then
-     stops FreeRADIUS.
+  3. The `summary` state reports the expected result, the actual result,
+     and `PASSED` or `FAILED`, and then stops FreeRADIUS.
 
   `resume-check.sh` makes each check and writes the triggers.  A state
   that waits for a trigger completes at once when the trigger matches,
@@ -26,8 +26,9 @@
   When the test fails, `make` prints the triggers after the files in the
   log directory.  The triggers contain one `freeradius-exited` or
   `freeradius-stalled` line for each exit or stall.  Each line contains
-  the path of a copy of the log of FreeRADIUS.  The
-  `test-summary` line is the last trigger.
+  the path of a copy of the log of FreeRADIUS.  The last three triggers
+  are `test-expected`, the result that a pass needs, `test-actual`, the
+  result of the test, and `test-result`, `PASSED` or `FAILED`.
 
   Run the test with `make test.multi-server.ldap-sync-resume.short`.
 #}
@@ -80,22 +81,18 @@ states:
 
   summary:
     description: >
-      Report the number of exits and stalls, and the reconnects at which
-      FreeRADIUS exited or stalled, then stop FreeRADIUS.
+      Report the result that a pass needs as the trigger `test-expected`,
+      the result of the test as the trigger `test-actual`, and `PASSED` or
+      `FAILED` as the trigger `test-result`, then stop FreeRADIUS.
     host:
       freeradius:
         actions:
         - execute_command:
-            command: bash /usr/local/bin/resume-check.sh summary {{ t.reconnects }} {{ t.stop_window }}
+            command: bash /usr/local/bin/resume-check.sh summary {{ t.reconnects }} {{ users }} {{ t.stop_window }}
     verify:
       timeout: {{ t.stop_window + t.margin }}
       trigger_mode: unordered
       triggers:
-      - test-summary:
-          json:
-            exits:
-              pattern:
-                reg_pattern: '^0$'
-            stalls:
-              pattern:
-                reg_pattern: '^0$'
+      - test-result:
+          pattern:
+            reg_pattern: '^\s*PASSED'

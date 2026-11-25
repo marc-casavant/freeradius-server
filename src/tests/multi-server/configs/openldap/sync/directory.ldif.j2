@@ -1,0 +1,39 @@
+# `directory.ldif` is the directory content for the suites that run a
+# Lightweight Directory Access Protocol (LDAP) sync.
+#
+#   ou=people  holds `users` accounts, named from `user0001`.  The sync
+#              search matches every account.  Every account has the
+#              password `testpass`.
+#   ou=noise   holds `noise` entries, named from `noise0001`.  The sync
+#              search does not match a noise entry.  When a noise entry
+#              changes, slapd sends the sync a new cookie and does not
+#              send an entry.
+dn: ou=people,dc=example,dc=com
+objectClass: organizationalUnit
+ou: people
+
+dn: ou=noise,dc=example,dc=com
+objectClass: organizationalUnit
+ou: noise
+{% for i in range(1, users + 1) %}
+{%- set uid = 'user%04d' | format(i) %}
+
+dn: uid={{ uid }},ou=people,dc=example,dc=com
+objectClass: inetOrgPerson
+objectClass: posixAccount
+cn: {{ uid }}
+sn: {{ uid }}
+uid: {{ uid }}
+uidNumber: {{ 10000 + i }}
+gidNumber: 10000
+homeDirectory: /home/{{ uid }}
+userPassword: testpass
+{% endfor %}
+{%- for i in range(1, noise + 1) %}
+{%- set cn = 'noise%04d' | format(i) %}
+
+dn: cn={{ cn }},ou=noise,dc=example,dc=com
+objectClass: device
+cn: {{ cn }}
+description: not matched by the sync search
+{% endfor %}

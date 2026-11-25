@@ -1,0 +1,83 @@
+# ---------------------------------------------------------------
+# Docker Compose Test Environment:
+#
+#   openldap (syncprov) <-- freeradius (ldap_sync)
+#
+#   The 'freeradius' container holds an RFC 4533 sync on the 'openldap'
+#   container.  A sync is a search that stays open.  The OpenLDAP server
+#   (slapd) sends FreeRADIUS each change to an entry that the search
+#   matches.  slapd also sends a cookie, a value that marks the changes
+#   that slapd has sent.  FreeRADIUS sends a stored cookie to resume a
+#   sync, when FreeRADIUS starts and after each reconnect.
+#   `tests/ldap-sync-resume/template.yml.j2` describes the test that
+#   uses the environment.
+# ---------------------------------------------------------------
+x-common-config: &id001
+  cap_add:
+  - NET_ADMIN
+  - SYS_PTRACE
+  environment:
+    TEST_PROJECT_NAME: ${COMPOSE_PROJECT_NAME}
+services:
+  openldap:
+    image: dinkel/openldap:latest
+    # Because a service `environment` replaces the `environment` of the
+    # `x-common-config` anchor, the 'openldap' service repeats
+    # `TEST_PROJECT_NAME`.
+    environment:
+      TEST_PROJECT_NAME: ${COMPOSE_PROJECT_NAME}
+      SLAPD_DOMAIN: "example.com"
+      SLAPD_PASSWORD: "adminpassword"
+      SLAPD_ORGANIZATION: "Example"
+      # The image applies `/etc/ldap/modules/syncprov*.ldif` on the first
+      # start
+      SLAPD_ADDITIONAL_MODULES: "syncprov"
+    volumes:
+    - ${DATA_PATH}/openldap/sync/syncprov.ldif:/etc/ldap/modules/syncprov.ldif:ro
+    - ${DATA_PATH}/openldap/sync/syncprov2.ldif:/etc/ldap/modules/syncprov2.ldif:ro
+    - ${DATA_PATH}/openldap/sync/directory.ldif:/etc/ldap/prepopulate/directory.ldif:ro
+    # The test restarts slapd with `kill $(cat /tmp/slapd.pid)`.  Because
+    # the loop starts slapd again when slapd exits, the container stays
+    # up.
+    # `-d 0` keeps slapd in the foreground without debug output.
+    command:
+    - bash
+    - -c
+    - |
+      while true; do
+        slapd -d 0 -u openldap -g openldap &
+        echo $$! > /tmp/slapd.pid
+        wait $$!
+      done
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c '</dev/tcp/localhost/389'"]
+      interval: 2s
+      timeout: 5s
+      retries: 15
+      start_period: 15s
+    <<: *id001
+  freeradius:
+    image: ${FREERADIUS_IMAGE}
+    extends:
+      file: freeradius-common.yml
+      service: freeradius-profiled
+    depends_on:
+      openldap:
+        condition: service_healthy
+    # Because a service `environment` replaces the `environment` of the
+    # `x-common-config` anchor, the 'freeradius' service repeats
+    # `TEST_PROJECT_NAME`.  `TEST_LOG_DIR` is the log directory of the
+    # test on the host, which holds the `failures` directory.
+    environment:
+      TEST_PROJECT_NAME: ${COMPOSE_PROJECT_NAME}
+      TEST_LOG_DIR: ${DATA_PATH}/logs
+    volumes:
+    - ${DATA_PATH}/freeradius/ldap-sync-resume/radiusd.conf:/etc/freeradius/radiusd.conf
+    - ${DATA_PATH}/freeradius/ldap-sync-resume/resume-check.sh:/usr/local/bin/resume-check.sh
+    - ${DATA_PATH}/logs/:/var/log/freeradius/
+    entrypoint:
+    - bash
+    - -lc
+    - |
+      sleep infinity
+    <<: *id001

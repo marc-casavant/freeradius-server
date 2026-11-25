@@ -1,0 +1,12 @@
+# `syncprov.ldif` loads the syncprov module, which makes slapd answer
+# RFC 4533 sync requests.
+#
+# Because slapd has the configuration schema of a module only after the
+# slapmodify run that loads the module, `syncprov2.ldif` adds the syncprov
+# overlay in a second slapmodify run.  The `dinkel/openldap:latest` image
+# applies each `/etc/ldap/modules/syncprov*.ldif` file in a separate
+# slapmodify run when `SLAPD_ADDITIONAL_MODULES` names `syncprov`.
+dn: cn=module{0},cn=config
+changetype: modify
+add: olcModuleLoad
+olcModuleLoad: syncprov.la

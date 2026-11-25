@@ -1,0 +1,41 @@
+# Accounts under `ou=people`.  The sync matches every account.
+users: 200
+
+# Entries under `ou=noise`.  The test does not use noise entries.
+noise: 0
+
+# Worker threads of FreeRADIUS.  Without `workers`, FreeRADIUS starts the
+# default number of worker threads.
+#workers: 1
+
+# Seconds that FreeRADIUS waits before opening a connection again, after
+# slapd closes the connection
+reconnect_delay: 1
+
+# Timings for each mode.  Under a profiler, FreeRADIUS starts and
+# processes the entries more slowly than in `service` mode.  The capture
+# script writes the profile after FreeRADIUS stops.
+#
+#   reconnects     times that the test restarts the OpenLDAP server
+#                  (slapd)
+#   resume_window  seconds that a state allows for FreeRADIUS to
+#                  reconnect and receive the entries
+#   stop_window    seconds that the `summary` state allows for FreeRADIUS
+#                  to stop, and for the capture script to write the
+#                  profile
+#   margin         seconds added to a verify window for docker exec
+#                  overhead
+timing:
+  service:
+    reconnects: 20
+    resume_window: 30
+    stop_window: 10
+    margin: 5
+  profiling:
+    reconnects: 5
+    resume_window: 180
+    stop_window: 180
+    margin: 10
+
+# Timeout for the whole test, in seconds, in both modes
+test_timeout: 2400

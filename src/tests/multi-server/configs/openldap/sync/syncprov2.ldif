@@ -1,0 +1,7 @@
+# `syncprov2.ldif` adds the syncprov overlay to the database that holds
+# `dc=example,dc=com`.
+dn: olcOverlay=syncprov,olcDatabase={1}mdb,cn=config
+changetype: add
+objectClass: olcOverlayConfig
+objectClass: olcSyncProvConfig
+olcOverlay: syncprov

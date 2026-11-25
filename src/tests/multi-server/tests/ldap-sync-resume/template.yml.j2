@@ -1,0 +1,101 @@
+{#
+  The test checks that FreeRADIUS keeps running, and keeps receiving
+  changes, when an RFC 4533 sync resumes from a cookie that is older than
+  every entry.  On some resumes an assertion fails, and FreeRADIUS exits.
+  In a build without assertions, FreeRADIUS exits or stops receiving
+  changes at a later reconnect.
+
+  One FreeRADIUS process runs for the whole test.  The test restarts the
+  OpenLDAP server (slapd) `reconnects` times.  After each restart,
+  FreeRADIUS reconnects and resumes the sync, and slapd sends FreeRADIUS
+  one `Add` and one `Present` for each account.
+
+  1. The `start` state starts FreeRADIUS and checks the first resume.
+  2. Each `reconnect_<n>` state restarts slapd and checks the resume that
+     follows the restart.
+  3. The `summary` state reports the number of exits and stalls, and then
+     stops FreeRADIUS.
+
+  `resume-check.sh` makes each check and writes the triggers.  A state
+  that waits for a trigger completes at once when the trigger matches,
+  and waits for the whole timeout when the trigger does not match.
+  Because a trigger that does not match makes a state wait for the whole
+  timeout, the `start` state and the `reconnect_<n>` states accept either
+  result of a check.  The `summary` state alone fails the test.
+
+  When the test fails, `make` prints the triggers after the files in the
+  log directory.  The triggers contain one `freeradius-exited` or
+  `freeradius-stalled` line for each exit or stall.  Each line contains
+  the path of a copy of the log of FreeRADIUS.  The
+  `test-summary` line is the last trigger.
+
+  Run the test with `make test.multi-server.ldap-sync-resume.short`.
+#}
+{%- set t = timing[mode] %}
+{%- from "macros.j2" import event_recv %}
+{%- macro check(reconnect) %}
+        - execute_command:
+            command: bash /usr/local/bin/resume-check.sh check {{ reconnect }} {{ t.reconnects }} {{ users }} {{ t.resume_window }}
+            detach: true
+{%- endmacro %}
+timeout: {{ test_timeout }}
+state_order: sequence
+states:
+  start:
+    description: >
+      `resume-check.sh` starts FreeRADIUS.  The sync resumes from the
+      cookie that `load Cookie` returns, and slapd sends FreeRADIUS the
+      entries.
+    host:
+      freeradius:
+        actions:
+        - execute_command:
+            command: rm -f /tmp/sync-events.log /tmp/sync-events.mark /tmp/freeradius-run.pid /var/log/freeradius/radius.log /var/log/freeradius/failures/*
+{{ check(0) }}
+    verify:
+      timeout: {{ 5 * t.resume_window + t.margin }}
+      trigger_mode: unordered
+      triggers:
+{{ event_recv('sync-resumed-0') }}
+{%- for reconnect in range(1, t.reconnects + 1) %}
+
+  reconnect_{{ reconnect }}:
+    description: >
+      Restart slapd.  FreeRADIUS reconnects and resumes the sync, and
+      slapd sends FreeRADIUS the entries again.
+    host:
+      openldap:
+        actions:
+        - execute_command:
+            command: kill $(cat /tmp/slapd.pid)
+      freeradius:
+        actions:
+{{ check(reconnect) }}
+    verify:
+      timeout: {{ 5 * t.resume_window + t.margin }}
+      trigger_mode: unordered
+      triggers:
+{{ event_recv('sync-resumed-' ~ reconnect) }}
+{%- endfor %}
+
+  summary:
+    description: >
+      Report the number of exits and stalls, and the reconnects at which
+      FreeRADIUS exited or stalled, then stop FreeRADIUS.
+    host:
+      freeradius:
+        actions:
+        - execute_command:
+            command: bash /usr/local/bin/resume-check.sh summary {{ t.reconnects }} {{ t.stop_window }}
+    verify:
+      timeout: {{ t.stop_window + t.margin }}
+      trigger_mode: unordered
+      triggers:
+      - test-summary:
+          json:
+            exits:
+              pattern:
+                reg_pattern: '^0$'
+            stalls:
+              pattern:
+                reg_pattern: '^0$'

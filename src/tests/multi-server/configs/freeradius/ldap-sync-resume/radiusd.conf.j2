@@ -1,0 +1,115 @@
+#
+#  The server under test does not have a RADIUS listener.  The `ldap_sync`
+#  virtual server resumes a sync on the 'openldap' container from the
+#  cookie that `load Cookie` returns, when FreeRADIUS starts and after
+#  each reconnect.
+#
+#  `environments/ldap-sync-resume.yml.j2` mounts the file as
+#  `/etc/freeradius/radiusd.conf`.
+#  `tests/ldap-sync-resume/short.test.yml` documents `workers`.
+#
+name       = freeradius
+
+raddbdir   = /etc/freeradius
+confdir    = ${raddbdir}
+modconfdir = ${confdir}/mods-config
+logdir     = /var/log/freeradius
+radacctdir = ${logdir}/radacct
+
+security {
+	allow_core_dumps = yes
+}
+
+log {
+	destination = files
+	file = ${logdir}/radius.log
+}
+{%- if workers is defined %}
+
+thread pool {
+	num_workers = {{ workers }}
+}
+{%- endif %}
+
+modules {
+	#
+	#  `sync_events` writes one line to `/tmp/sync-events.log` for every
+	#  change that the `ldap_sync` virtual server receives.
+	#  `resume-check.sh` counts the lines.  Because `make` prints the
+	#  last 200 lines of every file directly under `${logdir}` when the
+	#  test fails, `/tmp/sync-events.log` is outside `${logdir}`.
+	#
+	linelog sync_events {
+		destination = file
+{%- raw %}
+		format = "%{Packet-Type} %{LDAP-Sync.Entry-DN}"
+{%- endraw %}
+
+		file {
+			filename = /tmp/sync-events.log
+			permissions = 0644
+			escape_filenames = no
+
+			# Disable message buffering
+			buffer_count = 0
+			buffer_delay = 0
+			buffer_expiry = 0
+		}
+	}
+}
+
+server ldap_sync {
+	namespace = ldap_sync
+
+	listen {
+		transport = ldap
+
+		ldap {
+			server = 'openldap'
+			identity = 'cn=admin,dc=example,dc=com'
+			password = 'adminpassword'
+
+			connection {
+				reconnect_delay = {{ reconnect_delay }}
+			}
+		}
+
+		sync {
+			base_dn = "ou=people,dc=example,dc=com"
+			filter = "(objectClass=posixAccount)"
+			scope = 'sub'
+
+			update {
+				Proto.radius.User-Name = 'uid'
+			}
+		}
+	}
+
+	#
+	#  Because the cookie is older than every entry, the OpenLDAP
+	#  server (slapd) sends FreeRADIUS every entry.  slapd also sends
+	#  the identifiers of the entries that are present.
+	#
+	load Cookie {
+		reply.LDAP-Sync.Cookie := "rid=000,csn=20200101000000.000000Z#000000#000#000000"
+	}
+
+	store Cookie {
+	}
+
+	recv Add {
+		sync_events
+	}
+
+	recv Modify {
+		sync_events
+	}
+
+	recv Delete {
+		sync_events
+	}
+
+	recv Present {
+		sync_events
+	}
+}

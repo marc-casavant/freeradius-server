@@ -31,8 +31,9 @@
 #    freeradius-exited {"reconnect": N, "status": "<text>", "error": "<text>", "log": "<path>"}
 #
 #  `error` is the failed assertion or the talloc abort that FreeRADIUS
-#  logged.  `log` is the path on the host of
-#  `failures/reconnect-<reconnect>.log`.
+#  logged.  For the failed assertion `m->status == FR_MESSAGE_USED`, in
+#  service mode, `error` also has the value that `m->status` held.
+#  `log` is the path on the host of `failures/reconnect-<reconnect>.log`.
 #
 #  When FreeRADIUS is running and did not receive every change, `check`
 #  appends a `freeradius-stalled` line before the
@@ -40,7 +41,8 @@
 #  the fields of the `freeradius-exited` line.
 #
 #  `failures/reconnect-<reconnect>.log` holds every exit and stall of one
-#  reconnect.  For each exit or stall, the file has a heading, then the
+#  reconnect.  For each exit or stall, the file has a heading, then for
+#  an exit a second heading with `error`, then the
 #  whole log of the FreeRADIUS process, which ends with the failed
 #  assertion and the backtrace that FreeRADIUS wrote.  In service mode, a
 #  `gdb` backtrace of every thread follows the log, with the local
@@ -175,6 +177,29 @@ describe_exit() {
 }
 
 #
+#  When `error` is the failed assertion `m->status == FR_MESSAGE_USED`,
+#  add the value that `m->status` held to `error`.  The value is from the
+#  `gdb` output in `$panic_log`, where `gdb` printed the message slot in
+#  the frame of `fr_message_and_data_reset()`.  `gdb` prints the name of
+#  a message state, and prints a number for any other value.
+#
+describe_assert() {
+	local value
+
+	case "$error" in
+	*'m->status == FR_MESSAGE_USED'*) ;;
+	*) return ;;
+	esac
+	value=$(awk '/ in fr_message_and_data_reset \(/ { found = 1; next }
+		found && /^  status = / { sub(/,$/, "", $3); print $3; exit }' "$panic_log" 2> /dev/null)
+	case "$value" in
+	"") ;;
+	FR_MESSAGE_*) error="$error, actual m->status = $value" ;;
+	*) error="$error, actual m->status = $value (not a message state)" ;;
+	esac
+}
+
+#
 #  Record that FreeRADIUS started again after `cause`, as the trigger
 #  `freeradius-restarted` and as a heading in the failure log of the
 #  reconnect.
@@ -255,6 +280,7 @@ check)
 			kind=exited
 			error=$(grep -a 'ASSERT FAILED\|talloc abort' "$log" | tail -1 | tr -d '"\\')
 			describe_exit
+			describe_assert
 			status="$label: $exit_text after $received of $want LDAP user changes"
 		else
 			kind=stalled
@@ -264,6 +290,9 @@ check)
 		fi
 		{
 			echo "===== $status ====="
+			if [ "$kind" = exited ] && [ -n "$error" ]; then
+				echo "===== $error ====="
+			fi
 			cat "$log"
 			if [ "$kind" = exited ] && [ -f "$panic_log" ]; then
 				echo "===== gdb backtrace of every thread of the FreeRADIUS that exited ====="

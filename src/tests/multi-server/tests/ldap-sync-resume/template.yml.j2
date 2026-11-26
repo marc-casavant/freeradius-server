@@ -51,7 +51,7 @@ states:
       freeradius:
         actions:
         - execute_command:
-            command: rm -f /tmp/sync-events.log /tmp/sync-events.mark /tmp/freeradius-run.pid /var/log/freeradius/radius.log /var/log/freeradius/failures/*
+            command: rm -f /tmp/sync-events.log /tmp/sync-events.mark /tmp/freeradius-run.pid /tmp/freeradius-last-cause /tmp/freeradius-gave-up /tmp/freeradius-panic.log /var/log/freeradius/radius.log /var/log/freeradius/failures/*
 {{ check(0) }}
     verify:
       timeout: {{ 5 * t.resume_window + t.margin }}

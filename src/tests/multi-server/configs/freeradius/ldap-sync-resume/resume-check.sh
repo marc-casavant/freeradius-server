@@ -14,8 +14,8 @@
 #  profiler and stores the exit status.  `check` calls `run` to start
 #  FreeRADIUS.
 #
-#  `check` starts FreeRADIUS when FreeRADIUS is not running.  `check` then
-#  waits up to <window> seconds for the changes of one resumed sync.
+#  `check` 0 starts FreeRADIUS.  `check` then waits up to <window> seconds
+#  for the changes of one resumed sync.
 #  slapd sends one `Add` and one `Present` for each of the <users>
 #  accounts.  `check` then appends the line
 #
@@ -32,31 +32,47 @@
 #
 #  `error` is the failed assertion or the talloc abort that FreeRADIUS
 #  logged.  `log` is the path on the host of
-#  `failures/exit-<reconnect>-<restart>.log`, a copy of the log of
-#  FreeRADIUS.  Because `make` prints the last 200 lines of every file
-#  directly under the log directory when the test fails, the copies are
-#  in a subdirectory.
+#  `failures/reconnect-<reconnect>.log`.
 #
 #  When FreeRADIUS is running and did not receive every change, `check`
 #  appends a `freeradius-stalled` line before the
 #  `sync-resumed-<reconnect>` line.  The `freeradius-stalled` line has
-#  the fields of the `freeradius-exited` line.  `log` is the path of
-#  `failures/stall-<reconnect>-<restart>.log`.  In service
-#  mode, `failures/stall-<reconnect>-<restart>-backtrace.txt` holds a
-#  backtrace of every thread.
+#  the fields of the `freeradius-exited` line.
+#
+#  `failures/reconnect-<reconnect>.log` holds every exit and stall of one
+#  reconnect.  For each exit or stall, the file has a heading, then the
+#  whole log of the FreeRADIUS process, which ends with the failed
+#  assertion and the backtrace that FreeRADIUS wrote.  In service mode, a
+#  `gdb` backtrace of every thread follows the log, with the local
+#  variables of every frame.  For an exit, `panic_action` in
+#  `radiusd.conf` writes the `gdb` backtrace before FreeRADIUS exits.
+#  For a stall, `check` writes the `gdb` backtrace.  Because
+#  `make` prints the last 200 lines of every file directly under the log
+#  directory when the test fails, the files are in a subdirectory.
 #
 #  After an exit or a stall, `check` starts FreeRADIUS again and checks the
 #  first resume of the new process, up to three times.  Each of those
 #  resumes that fails adds one more `freeradius-exited` or
-#  `freeradius-stalled` line.
+#  `freeradius-stalled` line.  Each time `check` starts FreeRADIUS again,
+#  `check` appends the line
 #
-#  `summary` appends four lines and then stops FreeRADIUS:
+#    freeradius-restarted {"reconnect": N, "restart": N, "cause": "<text>", "time": "<UTC time>"}
+#
+#  and writes a heading with the same content to
+#  `failures/reconnect-<reconnect>.log`.  `cause` is how the FreeRADIUS
+#  process before the restart ended: `abort (SIGABRT)`,
+#  `segfault (SIGSEGV)`, `stall`, or the exit status.
+#
+#  `summary` appends five lines and then stops FreeRADIUS:
 #
 #    test-logs     <path on the host of the `failures` directory>
+#    test-restarts N: N after abort (SIGABRT), N after segfault (SIGSEGV), N after stall
 #    test-expected 0 exits, 0 stalls, N LDAP user changes at N/N reconnects
 #    test-actual   N exits, N stalls, N LDAP user changes at N/N reconnects
 #    test-result   <PASSED|FAILED>
 #
+#  `test-restarts` is the number of times that `check` started FreeRADIUS
+#  again, and the number for each cause.
 #  `test-expected` is the result that a pass needs, and `test-actual` is
 #  the result of the test in the same form.  An LDAP user change is one
 #  `Add` or one `Present` that slapd sends for an account.  `N/N` is the
@@ -73,6 +89,10 @@ set -u
 action=$1
 
 events=/tmp/sync-events.log
+panic_log=/tmp/freeradius-panic.log
+last_cause=/tmp/freeradius-last-cause
+gave_up=/tmp/freeradius-gave-up
+panic_gdb=/usr/local/src/repositories/freeradius-server/src/tests/panic.gdb
 mark=/tmp/sync-events.mark
 fifo=/tmp/freeradius-run.fifo
 failures=/var/log/freeradius/failures
@@ -127,7 +147,8 @@ start_server() {
 }
 
 #
-#  Print how FreeRADIUS exited, from the stored exit status.
+#  Set `exit_text` to a sentence that says how FreeRADIUS exited, and
+#  `cause` to the short form, from the stored exit status.
 #
 describe_exit() {
 	local code
@@ -135,18 +156,36 @@ describe_exit() {
 	code=$(cat "$exit_status" 2> /dev/null)
 	case "$code" in
 	134)
-		echo "FreeRADIUS aborted (SIGABRT, exit status 134)"
+		exit_text="FreeRADIUS aborted (SIGABRT, exit status 134)"
+		cause="abort (SIGABRT)"
 		;;
 	139)
-		echo "FreeRADIUS had a segmentation fault (SIGSEGV, exit status 139)"
+		exit_text="FreeRADIUS had a segmentation fault (SIGSEGV, exit status 139)"
+		cause="segfault (SIGSEGV)"
 		;;
 	"")
-		echo "FreeRADIUS exited with an unknown status"
+		exit_text="FreeRADIUS exited with an unknown status"
+		cause="exit with an unknown status"
 		;;
 	*)
-		echo "FreeRADIUS exited with status $code"
+		exit_text="FreeRADIUS exited with status $code"
+		cause="exit status $code"
 		;;
 	esac
+}
+
+#
+#  Record that FreeRADIUS started again after `cause`, as the trigger
+#  `freeradius-restarted` and as a heading in the failure log of the
+#  reconnect.
+#
+record_restart() {
+	local now
+
+	now=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+	mkdir -p "$failures"
+	echo "freeradius-restarted {\"reconnect\": $reconnect, \"restart\": $1, \"cause\": \"$cause\", \"time\": \"$now\"}" >> "$triggers"
+	echo "===== $now: restart $1 at reconnect $reconnect, FreeRADIUS started again after $cause =====" >> "$failures/reconnect-$reconnect.log"
 }
 
 case "$action" in
@@ -183,9 +222,20 @@ check)
 	if [ -f "$mark" ]; then
 		first=$(($(cat "$mark") + 1))
 	fi
-	if [ -z "$(server_pids)" ]; then
+	#
+	#  Start FreeRADIUS at the start of the test, and after a check
+	#  whose restarts all failed.  A FreeRADIUS that exited after the
+	#  check before, for example when slapd closed the connection, is
+	#  an exit of the reconnect, and the loop below reports the exit.
+	#
+	if [ "$reconnect" -eq 0 ] || [ -f "$gave_up" ]; then
 		start_server
 		first=1
+		if [ -f "$gave_up" ]; then
+			cause=$(cat "$last_cause" 2> /dev/null)
+			record_restart 0
+			rm -f "$gave_up"
+		fi
 	fi
 
 	ok=1
@@ -200,30 +250,43 @@ check)
 
 		ok=0
 		mkdir -p "$failures"
+		copy="reconnect-$reconnect.log"
 		if [ -z "$pids" ]; then
 			kind=exited
-			copy="exit-$reconnect-$restarts.log"
 			error=$(grep -a 'ASSERT FAILED\|talloc abort' "$log" | tail -1 | tr -d '"\\')
-			status="$label: $(describe_exit) after $received of $want LDAP user changes"
+			describe_exit
+			status="$label: $exit_text after $received of $want LDAP user changes"
 		else
 			kind=stalled
-			copy="stall-$reconnect-$restarts.log"
+			cause="stall"
 			error="FreeRADIUS did not receive every LDAP user change"
-			if [ -z "${RADIUSD_COMMAND:-}" ]; then
-				gdb -batch -ex 'thread apply all bt 12' -p "$(echo "$pids" | head -1)" \
-					> "$failures/stall-$reconnect-$restarts-backtrace.txt" 2>&1
-				error="$error, see failures/stall-$reconnect-$restarts-backtrace.txt"
-			fi
 			status="$label: FreeRADIUS is running and received $received of $want LDAP user changes in $window seconds"
+		fi
+		{
+			echo "===== $status ====="
+			cat "$log"
+			if [ "$kind" = exited ] && [ -f "$panic_log" ]; then
+				echo "===== gdb backtrace of every thread of the FreeRADIUS that exited ====="
+				cat "$panic_log"
+			fi
+			if [ "$kind" = stalled ] && [ -z "${RADIUSD_COMMAND:-}" ]; then
+				echo "===== gdb backtrace of every thread of the stalled FreeRADIUS ====="
+				gdb -batch -x "$panic_gdb" -p "$(echo "$pids" | head -1)" 2>&1
+			fi
+			echo
+		} >> "$failures/$copy"
+		rm -f "$panic_log"
+		echo "$cause" > "$last_cause"
+		if [ "$kind" = stalled ]; then
 			kill -9 $pids 2> /dev/null
 		fi
-		cp "$log" "$failures/$copy"
 		echo "freeradius-$kind {\"reconnect\": $reconnect, \"status\": \"$status\", \"error\": \"${error:-the log of FreeRADIUS does not have a failed assertion or a talloc abort}\", \"log\": \"$TEST_LOG_DIR/failures/$copy\"}" >> "$triggers"
 		if [ -z "${failure:-}" ]; then
 			failure=$status
 		fi
 
 		if [ "$restarts" -ge 3 ]; then
+			touch "$gave_up"
 			break
 		fi
 		restarts=$((restarts + 1))
@@ -238,7 +301,11 @@ check)
 		done
 		start_server
 		first=1
+		record_restart "$restarts"
 	done
+	if [ "$ok" -eq 0 ] && [ -n "$(server_pids)" ]; then
+		echo "===== $label: FreeRADIUS is running and received $received of $want LDAP user changes =====" >> "$failures/reconnect-$reconnect.log"
+	fi
 
 	echo "$run_pid" > /tmp/freeradius-run.pid
 	wc -l < "$events" > "$mark"
@@ -264,8 +331,13 @@ summary)
 	else
 		result=FAILED
 	fi
+	restarts=$(grep -c '^freeradius-restarted ' "$triggers")
+	after_abort=$(grep -c '^freeradius-restarted .*"cause": "abort' "$triggers")
+	after_segfault=$(grep -c '^freeradius-restarted .*"cause": "segfault' "$triggers")
+	after_stall=$(grep -c '^freeradius-restarted .*"cause": "stall' "$triggers")
 	{
 		echo "test-logs     $TEST_LOG_DIR/failures"
+		echo "test-restarts $restarts: $after_abort after abort (SIGABRT), $after_segfault after segfault (SIGSEGV), $after_stall after stall"
 		echo "test-expected 0 exits, 0 stalls, $want LDAP user changes at $reconnects/$reconnects reconnects"
 		echo "test-actual   $exits exits, $stalls stalls, $want LDAP user changes at $complete/$reconnects reconnects"
 		echo "test-result   $result"

@@ -24,6 +24,22 @@ log {
 	destination = files
 	file = ${logdir}/radius.log
 }
+{%- if mode == "service" %}
+
+#
+#  On a failed assertion or a fatal signal, `gdb` writes a backtrace of
+#  every thread, with the local variables of every frame, to
+#  `/tmp/freeradius-panic.log`.  `src/tests/panic.gdb` holds the backtrace
+#  commands.  The `-ex` commands before `-x` print the message slot (`m`),
+#  the message set (`ms`), the channel data (`cd`), and the socket (`s`)
+#  in every frame that has the variable.  `resume-check.sh` copies
+#  `/tmp/freeradius-panic.log` to the failure log of the reconnect.
+#
+#  Because a profiler runs FreeRADIUS under another process, the
+#  configuration sets `panic_action` in service mode only.
+#
+panic_action = "gdb -batch -ex 'set print pretty on' -ex 'thread apply all -s frame apply all -s p *m' -ex 'thread apply all -s frame apply all -s p *ms' -ex 'thread apply all -s frame apply all -s p *cd' -ex 'thread apply all -s frame apply all -s p *s' -x /usr/local/src/repositories/freeradius-server/src/tests/panic.gdb %e %p > /tmp/freeradius-panic.log 2>&1"
+{%- endif %}
 {%- if workers is defined %}
 
 thread pool {
